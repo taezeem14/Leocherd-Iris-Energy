@@ -77,6 +77,9 @@ class AnimationGenerationStage(PipelineStage):
             for j_name, node in skel.joints.items():
                 joint_rotations[j_name][t] = node.local_rotation
 
+        # Reset skeleton to canonical rest pose for downstream asset exporters
+        skel.reset_to_rest()
+
         anim = SkeletalAnimation(
             name=f"Anim_{skel.name}",
             fps=fps,

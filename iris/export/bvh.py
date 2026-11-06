@@ -77,13 +77,15 @@ class BVHExporter(BaseAssetExporter):
             if node.parent_name is None:
                 lines.append(f"{indent}ROOT {name}")
                 lines.append(f"{indent}{{")
-                lines.append(f"{indent}  OFFSET 0.0 0.0 0.0")
+                lines.append(f"{indent}  OFFSET {node.rest_world_pos[0]:.4f} {node.rest_world_pos[1]:.4f} {node.rest_world_pos[2]:.4f}")
                 lines.append(f"{indent}  CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation")
             else:
+                parent_node = skeleton.joints[node.parent_name]
+                offset = node.rest_world_pos - parent_node.rest_world_pos
                 lines.append(f"{indent}JOINT {name}")
                 lines.append(f"{indent}{{")
                 lines.append(
-                    f"{indent}  OFFSET {node.local_pos[0]:.4f} {node.local_pos[1]:.4f} {node.local_pos[2]:.4f}"
+                    f"{indent}  OFFSET {offset[0]:.4f} {offset[1]:.4f} {offset[2]:.4f}"
                 )
                 lines.append(f"{indent}  CHANNELS 3 Zrotation Xrotation Yrotation")
 

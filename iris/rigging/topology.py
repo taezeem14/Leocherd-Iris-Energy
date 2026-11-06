@@ -31,12 +31,8 @@ class SkeletonReconstructionStage(PipelineStage):
         morphology = MorphologyRegistry.get(morphology_name)
         context.morphology = morphology
 
-        # Construct graph skeleton from morphology
+        # Construct graph skeleton from canonical morphology rest pose
         skeleton = Skeleton.from_morphology(morphology)
-
-        # Update rest pose from first high-confidence frame
-        first_pose = context.pose_sequence[0]
-        skeleton.update_from_pose(first_pose, enforce_bone_lengths=True)
 
         context.skeleton = skeleton
         logger.info(

@@ -39,7 +39,7 @@ class GltfExporter(BaseAssetExporter):
 
         logger.info(f"Exporting glTF 2.0 asset to {out_file}...")
 
-        # 1. Map joint hierarchy to glTF nodes
+        # 1. Map joint hierarchy to glTF nodes in canonical bind pose (T-pose)
         joint_names = list(skeleton.joints.keys())
         node_map = {name: idx for idx, name in enumerate(joint_names)}
 
@@ -48,12 +48,16 @@ class GltfExporter(BaseAssetExporter):
             node = skeleton.joints[j_name]
             children_indices = [node_map[c] for c in node.children_names if c in node_map]
 
-            # glTF quaternion convention: [x, y, z, w]
-            q_w, q_x, q_y, q_z = node.local_rotation
+            if node.parent_name is not None:
+                parent_node = skeleton.joints[node.parent_name]
+                t_local = node.rest_world_pos - parent_node.rest_world_pos
+            else:
+                t_local = node.rest_world_pos
+
             gltf_node: Dict[str, Any] = {
                 "name": j_name,
-                "translation": [round(float(v), 5) for v in node.local_pos],
-                "rotation": [round(float(q_x), 5), round(float(q_y), 5), round(float(q_z), 5), round(float(q_w), 5)],
+                "translation": [float(t_local[0]), float(t_local[1]), float(t_local[2])],
+                "rotation": [0.0, 0.0, 0.0, 1.0],  # Canonical bind pose has identity rotation [x, y, z, w]
             }
             if children_indices:
                 gltf_node["children"] = children_indices

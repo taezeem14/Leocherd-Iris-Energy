@@ -133,8 +133,8 @@ class ONNXBlazePoseEstimator(BasePoseEstimator):
             screen_y = py / orig_h
 
             # Metric 3D world coordinates (meters)
-            world_x = float(world_landmarks[i * 3 + 0])
-            world_y = float(-world_landmarks[i * 3 + 1])  # Invert Y to conform to 3D standard (+Y up)
+            world_x = float(-world_landmarks[i * 3 + 0])  # Invert X so character right is +X, left is -X (anatomical rig convention)
+            world_y = float(-world_landmarks[i * 3 + 1]) + 1.0  # Invert Y to conform to 3D standard (+Y up) and elevate hips to human standing height (1.0m)
             world_z = float(-world_landmarks[i * 3 + 2])  # Invert Z for right-handed coordinate convention
 
             # Confidence & visibility (apply sigmoid to raw logits)

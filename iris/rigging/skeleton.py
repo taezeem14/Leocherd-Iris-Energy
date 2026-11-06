@@ -161,6 +161,18 @@ class Skeleton:
         for child_name in node.children_names:
             self._compute_joint_rotation_recursive(child_name)
 
+    def reset_to_rest(self) -> None:
+        """Resets all joints to their canonical rest positions, orientations, and local offsets."""
+        for node in self.joints.values():
+            node.world_pos = node.rest_world_pos.copy()
+            if node.parent_name is not None:
+                parent_rest = self.joints[node.parent_name].rest_world_pos
+                node.local_pos = (node.rest_world_pos - parent_rest).copy()
+            else:
+                node.local_pos = node.rest_world_pos.copy()
+            node.world_rotation = QuaternionMath.identity()
+            node.local_rotation = QuaternionMath.identity()
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,

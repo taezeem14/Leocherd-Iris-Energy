@@ -172,12 +172,16 @@ class HumanPoseSynthesizer:
         )
 
         # 5. Upper Limbs
+        # Clavicles (midpoint from chest out toward the shoulder socket)
+        left_clavicle = chest_pos * 0.4 + ls_pos * 0.6
+        right_clavicle = chest_pos * 0.4 + rs_pos * 0.6
+
         rig["LeftShoulder"] = Joint3D(
             name="LeftShoulder",
-            x=float(ls_pos[0]),
-            y=float(ls_pos[1]),
-            z=float(ls_pos[2]),
-            confidence=get_conf("left_shoulder"),
+            x=float(left_clavicle[0]),
+            y=float(left_clavicle[1]),
+            z=float(left_clavicle[2]),
+            confidence=min(chest_conf, get_conf("left_shoulder")),
         )
         rig["LeftArm"] = Joint3D(
             name="LeftArm",
@@ -205,10 +209,10 @@ class HumanPoseSynthesizer:
 
         rig["RightShoulder"] = Joint3D(
             name="RightShoulder",
-            x=float(rs_pos[0]),
-            y=float(rs_pos[1]),
-            z=float(rs_pos[2]),
-            confidence=get_conf("right_shoulder"),
+            x=float(right_clavicle[0]),
+            y=float(right_clavicle[1]),
+            z=float(right_clavicle[2]),
+            confidence=min(chest_conf, get_conf("right_shoulder")),
         )
         rig["RightArm"] = Joint3D(
             name="RightArm",
