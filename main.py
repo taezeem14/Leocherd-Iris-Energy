@@ -58,21 +58,29 @@ def cmd_reconstruct(args: argparse.Namespace) -> None:
     out_dir = args.output_dir or "outputs"
     formats = [f.strip() for f in args.formats.split(",") if f.strip()]
 
+    max_frames = args.max_frames
+
     print("=" * 65)
     print(" LEOCHERD IRIS ENERGY - 3D RIGGING & RECONSTRUCTION PIPELINE")
     print("=" * 65)
     print(f" Input Video            : {video_path}")
     print(f" Creature Morphology    : {morphology}")
     print(f" Processing Rate        : {target_fps} FPS")
+    print(f" Max Frames             : {max_frames if max_frames else 'All'}")
     print(f" Target Exports         : {', '.join(formats).upper()}")
     print(f" Destination Directory  : {out_dir}")
     print("-" * 65)
+
+    overrides = {}
+    if max_frames:
+        overrides["max_frames"] = max_frames
 
     context = ExecutionContext(
         input_path=video_path,
         output_dir=out_dir,
         morphology_name=morphology,
         target_fps=target_fps,
+        config_overrides=overrides,
     )
 
     pipeline = Pipeline("IrisEndToEndReconstruction")
@@ -131,6 +139,7 @@ def main() -> None:
     p_recon.add_argument("video_path", help="Path to input video file")
     p_recon.add_argument("--morphology", "-m", default="human", help="Creature morphology (human, quadruped, etc.)")
     p_recon.add_argument("--fps", type=int, default=15, help="Sampling frame rate (default: 15)")
+    p_recon.add_argument("--max-frames", type=int, default=None, help="Maximum number of frames to extract and process")
     p_recon.add_argument("--output-dir", "-o", default="outputs", help="Output directory")
     p_recon.add_argument("--formats", default="gltf,bvh,blender", help="Comma-separated export formats")
     p_recon.set_defaults(func=cmd_reconstruct)

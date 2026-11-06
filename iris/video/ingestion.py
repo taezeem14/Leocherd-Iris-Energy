@@ -83,6 +83,7 @@ class VideoIngestionStage(PipelineStage):
         metadata, frames = self.service.process(
             video_path=context.input_path,
             target_fps=context.target_fps,
+            max_frames=context.config_overrides.get("max_frames"),
         )
 
         context.video_metadata = metadata
