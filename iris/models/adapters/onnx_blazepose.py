@@ -137,10 +137,12 @@ class ONNXBlazePoseEstimator(BasePoseEstimator):
             world_y = float(-world_landmarks[i * 3 + 1])  # Invert Y to conform to 3D standard (+Y up)
             world_z = float(-world_landmarks[i * 3 + 2])  # Invert Z for right-handed coordinate convention
 
-            # Confidence & visibility
-            visibility = float(landmarks_raw[i * 5 + 3])
-            presence = float(landmarks_raw[i * 5 + 4])
-            conf = min(1.0, max(0.0, pose_score * visibility))
+            # Confidence & visibility (apply sigmoid to raw logits)
+            raw_vis = float(landmarks_raw[i * 5 + 3])
+            raw_pres = float(landmarks_raw[i * 5 + 4])
+            vis_prob = float(1.0 / (1.0 + np.exp(-np.clip(raw_vis, -15.0, 15.0))))
+            pres_prob = float(1.0 / (1.0 + np.exp(-np.clip(raw_pres, -15.0, 15.0))))
+            conf = min(1.0, max(0.0, pose_score * vis_prob))
 
             joints[name] = Joint3D(
                 name=name,
@@ -148,7 +150,7 @@ class ONNXBlazePoseEstimator(BasePoseEstimator):
                 y=round(world_y, 4),
                 z=round(world_z, 4),
                 confidence=round(conf, 3),
-                visibility=round(presence, 3),
+                visibility=round(pres_prob, 3),
             )
 
         return PoseFrame(

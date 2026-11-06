@@ -18,8 +18,12 @@ class Joint3D(BaseModel):
     x: float = Field(description="Coordinate along horizontal X-axis (right +X)")
     y: float = Field(description="Coordinate along vertical Y-axis (up +Y or screen down)")
     z: float = Field(default=0.0, description="Inferred depth along Z-axis (camera forward +Z)")
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Detection confidence")
-    visibility: float = Field(default=1.0, ge=0.0, le=1.0, description="Presence/visibility score")
+    confidence: float = Field(default=1.0, description="Detection confidence")
+    visibility: float = Field(default=1.0, description="Presence/visibility score")
+
+    def model_post_init(self, __context) -> None:
+        object.__setattr__(self, "confidence", min(1.0, max(0.0, float(self.confidence))))
+        object.__setattr__(self, "visibility", min(1.0, max(0.0, float(self.visibility))))
 
     def to_numpy(self) -> np.ndarray:
         return np.array([self.x, self.y, self.z], dtype=np.float32)

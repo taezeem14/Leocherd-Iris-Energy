@@ -56,9 +56,9 @@ class QuaternionMath:
             return np.array([0.0, axis[0], axis[1], axis[2]], dtype=np.float32)
 
         axis = np.cross(u1, u2)
-        w = math.sqrt((1.0 + dot) * 2.0) * 0.5
-        inv_w4 = 1.0 / (4.0 * w)
-        q = np.array([w, axis[0] * inv_w4, axis[1] * inv_w4, axis[2] * inv_w4], dtype=np.float32)
+        w = math.sqrt(max(0.0, (1.0 + dot) * 0.5))
+        inv_denom = 1.0 / (2.0 * w) if w > 1e-6 else 1.0
+        q = np.array([w, axis[0] * inv_denom, axis[1] * inv_denom, axis[2] * inv_denom], dtype=np.float32)
         return QuaternionMath.normalize_quat(q)
 
     @staticmethod

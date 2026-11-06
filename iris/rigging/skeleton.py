@@ -182,7 +182,7 @@ class Skeleton:
                     "name": b.name,
                     "parent": b.parent_joint,
                     "child": b.child_joint,
-                    "rest_length": b.rest_length,
+                    "rest_length": float(b.rest_length),
                 }
                 for b in self.bones.values()
             ],
