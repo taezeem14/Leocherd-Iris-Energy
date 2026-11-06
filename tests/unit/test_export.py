@@ -47,8 +47,10 @@ def test_gltf_export(tmp_path, dummy_rig_and_anim):
     with open(res, "r", encoding="utf-8") as f:
         doc = json.load(f)
     assert doc["asset"]["version"] == "2.0"
-    assert len(doc["nodes"]) == len(skel.joints)
+    assert len(doc["nodes"]) == len(skel.joints) + 1  # Joints + Skinned Mesh node
     assert len(doc["animations"]) == 1
+    assert "meshes" in doc and len(doc["meshes"]) == 1
+    assert "materials" in doc and len(doc["materials"]) == 1
 
 
 def test_bvh_export(tmp_path, dummy_rig_and_anim):

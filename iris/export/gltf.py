@@ -80,6 +80,7 @@ class GltfExporter(BaseAssetExporter):
             count: int,
             min_vals: Optional[List[float]] = None,
             max_vals: Optional[List[float]] = None,
+            target: Optional[int] = None,
         ) -> int:
             nonlocal raw_buffer
             # 4-byte alignment
@@ -93,11 +94,14 @@ class GltfExporter(BaseAssetExporter):
             raw_buffer.extend(data_bytes)
 
             bv_idx = len(buffer_views)
-            buffer_views.append({
+            bv: Dict[str, Any] = {
                 "buffer": 0,
                 "byteOffset": offset,
                 "byteLength": byte_len,
-            })
+            }
+            if target is not None:
+                bv["target"] = target
+            buffer_views.append(bv)
 
             acc_idx = len(accessors)
             acc: Dict[str, Any] = {
@@ -199,7 +203,96 @@ class GltfExporter(BaseAssetExporter):
             count=len(joint_names),
         )
 
-        # 3. Assemble glTF Document with Base64 embedded URI
+        # 3. Generate Skinned 3D Proxy Mannequin Geometry
+        from iris.rigging.proxy_mesh import ProxyMeshGenerator
+
+        verts, norms, tri_indices, j_indices, j_weights = ProxyMeshGenerator.create_skinned_mannequin(skeleton)
+
+        # 3a. Add Mesh Vertex Attributes to Buffer
+        min_pos = [round(float(v), 5) for v in np.min(verts, axis=0)]
+        max_pos = [round(float(v), 5) for v in np.max(verts, axis=0)]
+        pos_acc_idx = add_buffer_data(
+            verts.tobytes(),
+            component_type=5126,  # FLOAT
+            type_str="VEC3",
+            count=len(verts),
+            min_vals=min_pos,
+            max_vals=max_pos,
+            target=34962,  # ARRAY_BUFFER
+        )
+        norm_acc_idx = add_buffer_data(
+            norms.tobytes(),
+            component_type=5126,  # FLOAT
+            type_str="VEC3",
+            count=len(norms),
+            target=34962,
+        )
+        joints_acc_idx = add_buffer_data(
+            j_indices.tobytes(),
+            component_type=5123,  # UNSIGNED_SHORT
+            type_str="VEC4",
+            count=len(j_indices),
+            target=34962,
+        )
+        weights_acc_idx = add_buffer_data(
+            j_weights.tobytes(),
+            component_type=5126,  # FLOAT
+            type_str="VEC4",
+            count=len(j_weights),
+            target=34962,
+        )
+        flat_indices = tri_indices.flatten().astype(np.uint16)
+        indices_acc_idx = add_buffer_data(
+            flat_indices.tobytes(),
+            component_type=5123,  # UNSIGNED_SHORT
+            type_str="SCALAR",
+            count=len(flat_indices),
+            min_vals=[int(np.min(flat_indices))],
+            max_vals=[int(np.max(flat_indices))],
+            target=34963,  # ELEMENT_ARRAY_BUFFER
+        )
+
+        # 3b. Skinned Mesh & Material Definitions
+        meshes = [
+            {
+                "name": f"Mesh_{skeleton.name}",
+                "primitives": [
+                    {
+                        "attributes": {
+                            "POSITION": pos_acc_idx,
+                            "NORMAL": norm_acc_idx,
+                            "JOINTS_0": joints_acc_idx,
+                            "WEIGHTS_0": weights_acc_idx,
+                        },
+                        "indices": indices_acc_idx,
+                        "material": 0,
+                        "mode": 4,  # TRIANGLES
+                    }
+                ],
+            }
+        ]
+
+        materials = [
+            {
+                "name": "Iris_Mannequin_Material",
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.22, 0.65, 0.95, 1.0],  # Iris Blue/Cyan
+                    "metallicFactor": 0.15,
+                    "roughnessFactor": 0.45,
+                },
+                "doubleSided": True,
+            }
+        ]
+
+        # 3c. Skinned Mesh Node bound to skeleton skin 0
+        mesh_node_idx = len(nodes)
+        nodes.append({
+            "name": f"SkinnedMesh_{skeleton.name}",
+            "mesh": 0,
+            "skin": 0,
+        })
+
+        # 4. Assemble glTF Document with Base64 embedded URI
         b64_buffer = base64.b64encode(raw_buffer).decode("ascii")
         data_uri = f"data:application/octet-stream;base64,{b64_buffer}"
 
@@ -209,8 +302,10 @@ class GltfExporter(BaseAssetExporter):
                 "generator": "Leocherd Iris Energy 0.1.0 Universal glTF Exporter",
             },
             "scene": 0,
-            "scenes": [{"nodes": [root_idx]}],
+            "scenes": [{"nodes": [root_idx, mesh_node_idx]}],
             "nodes": nodes,
+            "materials": materials,
+            "meshes": meshes,
             "skins": [
                 {
                     "name": f"Skin_{skeleton.name}",
