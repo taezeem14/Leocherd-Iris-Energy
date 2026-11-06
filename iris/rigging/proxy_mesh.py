@@ -303,18 +303,39 @@ class ProxyMeshGenerator:
         final_verts = np.vstack(all_verts)
         final_norms = np.vstack(all_norms)
         final_indices = np.vstack(all_indices)
-        final_joint_indices = np.vstack(all_joint_indices)
-        final_joint_weights = np.vstack(all_joint_weights)
+        raw_joint_indices = np.vstack(all_joint_indices)
+        raw_joint_weights = np.vstack(all_joint_weights)
 
-        # Normalize weights to ensure float summation == 1.0
-        w_sums = np.sum(final_joint_weights, axis=1, keepdims=True)
-        w_sums[w_sums < 1e-6] = 1.0
-        final_joint_weights = final_joint_weights / w_sums
+        # Sanitize joint weights and indices to strictly conform to glTF 2.0 specification:
+        # 1. Influences sorted descending by weight.
+        # 2. Weights normalized to sum exactly to 1.0.
+        # 3. Any influence with zero weight MUST have joint index = 0 (prevents ACCESSOR_JOINTS_USED_ZERO_WEIGHT).
+        V = len(raw_joint_weights)
+        clean_joint_indices = np.zeros((V, 4), dtype=np.uint16)
+        clean_joint_weights = np.zeros((V, 4), dtype=np.float32)
+
+        for v_idx in range(V):
+            pairs = []
+            for k in range(4):
+                w = float(raw_joint_weights[v_idx, k])
+                j = int(raw_joint_indices[v_idx, k])
+                if w > 1e-5:
+                    pairs.append((w, j))
+
+            pairs.sort(key=lambda p: p[0], reverse=True)
+            total_w = sum(p[0] for p in pairs)
+            if total_w < 1e-6:
+                clean_joint_weights[v_idx, 0] = 1.0
+                clean_joint_indices[v_idx, 0] = 0
+            else:
+                for k, (w, j) in enumerate(pairs[:4]):
+                    clean_joint_weights[v_idx, k] = w / total_w
+                    clean_joint_indices[v_idx, k] = j
 
         return (
             final_verts.astype(np.float32),
             final_norms.astype(np.float32),
             final_indices.astype(np.uint16),
-            final_joint_indices.astype(np.uint16),
-            final_joint_weights.astype(np.float32),
+            clean_joint_indices,
+            clean_joint_weights,
         )

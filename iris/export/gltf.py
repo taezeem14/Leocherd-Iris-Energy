@@ -209,8 +209,8 @@ class GltfExporter(BaseAssetExporter):
         verts, norms, tri_indices, j_indices, j_weights = ProxyMeshGenerator.create_skinned_mannequin(skeleton)
 
         # 3a. Add Mesh Vertex Attributes to Buffer
-        min_pos = [round(float(v), 5) for v in np.min(verts, axis=0)]
-        max_pos = [round(float(v), 5) for v in np.max(verts, axis=0)]
+        min_pos = [float(v) for v in np.min(verts, axis=0)]
+        max_pos = [float(v) for v in np.max(verts, axis=0)]
         pos_acc_idx = add_buffer_data(
             verts.tobytes(),
             component_type=5126,  # FLOAT
