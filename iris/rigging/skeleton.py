@@ -121,6 +121,19 @@ class Skeleton:
                     rest_vec = child_node.rest_world_pos - node.rest_world_pos
                     unit_dir = QuaternionMath.normalize_vector(rest_vec)
 
+                # Anatomical biomechanical constraints for legs:
+                # 1. Shin (knee to foot) must extend downward (-Y)
+                if "foot" in child_name.lower() and "leg" in current_joint.lower():
+                    if unit_dir[1] > -0.10:
+                        unit_dir[1] = -0.90
+                        unit_dir = QuaternionMath.normalize_vector(unit_dir)
+
+                # 2. Thigh (hips to knee) must extend downward (-Y)
+                elif "leg" in child_name.lower() and "upleg" in current_joint.lower():
+                    if unit_dir[1] > 0.10:
+                        unit_dir[1] = -0.85
+                        unit_dir = QuaternionMath.normalize_vector(unit_dir)
+
                 # Clamp child position strictly to anatomical rest length
                 child_node.world_pos = node.world_pos + unit_dir * bone.rest_length
 
@@ -133,8 +146,43 @@ class Skeleton:
 
     def _compute_joint_rotation_recursive(self, joint_name: str) -> None:
         node = self.joints[joint_name]
+        q_world = None
+        name_lower = joint_name.lower()
 
-        if node.children_names:
+        # Specialized anatomical basis calculation for major segments to prevent roll/twist distortion
+        if name_lower == "hips" and "Spine" in self.joints and "LeftUpLeg" in self.joints and "RightUpLeg" in self.joints:
+            p_spine = self.joints["Spine"]
+            p_l = self.joints["LeftUpLeg"]
+            p_r = self.joints["RightUpLeg"]
+            y_rest = p_spine.rest_world_pos - node.rest_world_pos
+            lat_rest = p_l.rest_world_pos - p_r.rest_world_pos
+            z_rest = np.cross(lat_rest, y_rest)
+            b_rest = QuaternionMath.build_orthonormal_basis(y_rest, z_rest)
+
+            y_cur = p_spine.world_pos - node.world_pos
+            lat_cur = p_l.world_pos - p_r.world_pos
+            z_cur = np.cross(lat_cur, y_cur)
+            b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
+            q_world = QuaternionMath.rotation_between_bases(b_rest, b_cur)
+
+        elif name_lower == "chest" and "Neck" in self.joints and "LeftShoulder" in self.joints and "RightShoulder" in self.joints:
+            p_neck = self.joints["Neck"]
+            p_l = self.joints["LeftShoulder"]
+            p_r = self.joints["RightShoulder"]
+            y_rest = p_neck.rest_world_pos - node.rest_world_pos
+            lat_rest = p_l.rest_world_pos - p_r.rest_world_pos
+            z_rest = np.cross(lat_rest, y_rest)
+            b_rest = QuaternionMath.build_orthonormal_basis(y_rest, z_rest)
+
+            y_cur = p_neck.world_pos - node.world_pos
+            lat_cur = p_l.world_pos - p_r.world_pos
+            z_cur = np.cross(lat_cur, y_cur)
+            b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
+            q_world = QuaternionMath.rotation_between_bases(b_rest, b_cur)
+
+        if q_world is not None:
+            node.world_rotation = q_world
+        elif node.children_names:
             # Primary bone direction to first child
             primary_child = self.joints[node.children_names[0]]
             rest_dir = QuaternionMath.normalize_vector(primary_child.rest_world_pos - node.rest_world_pos)

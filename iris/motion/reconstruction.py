@@ -40,6 +40,11 @@ class MotionProcessingStage(PipelineStage):
 
         logger.info(f"Reconstructing motion across {T} frames for {len(all_joint_names)} joints...")
 
+        morphology_name = context.morphology_name or "human"
+        from iris.morphology import MorphologyRegistry
+        morphology = context.morphology or MorphologyRegistry.get(morphology_name)
+        relaxed_dict = morphology.relaxed_pose if hasattr(morphology, "relaxed_pose") else morphology.rest_pose
+
         trajectories: Dict[str, JointTrajectory] = {}
 
         for j_name in all_joint_names:
@@ -50,10 +55,15 @@ class MotionProcessingStage(PipelineStage):
                 if j_name in p.joints:
                     j = p.joints[j_name]
                     raw_pos[t] = j.to_numpy()
-                    confs[t] = j.confidence
+                    # If frame was unobserved/empty, treat keypoints as zero confidence to trigger neutral blend
+                    confs[t] = 0.0 if getattr(p, "is_interpolated", False) else j.confidence
 
-            # 1. Impute missing / occluded keypoints
-            imputed = TrajectoryInterpolator.impute_missing(raw_pos, confs, timestamps)
+            default_rest = relaxed_dict.get(j_name)
+
+            # 1. Impute missing / occluded keypoints anchored to canonical neutral pose
+            imputed = TrajectoryInterpolator.impute_missing(
+                raw_pos, confs, timestamps, min_conf=0.35, default_rest_pos=default_rest
+            )
 
             # 2. Smooth trajectory
             smoothed = TemporalSmoother.smooth_trajectory(imputed, timestamps, method=self.smoothing_method)

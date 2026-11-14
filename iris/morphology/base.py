@@ -86,6 +86,11 @@ class BaseMorphology(ABC):
     def rest_pose(self) -> Dict[str, np.ndarray]:
         return self._rest_pose
 
+    @property
+    def relaxed_pose(self) -> Dict[str, np.ndarray]:
+        """Canonical relaxed standing pose for neutral boundary anchoring."""
+        return {k: v.copy() for k, v in self._rest_pose.items()}
+
     def get_parent(self, joint_name: str) -> Optional[str]:
         return self._parent_map.get(joint_name)
 

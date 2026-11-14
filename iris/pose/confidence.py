@@ -19,6 +19,24 @@ class ConfidenceFilter:
         low_confidence: List[str] = []
         high_confidence: List[str] = []
 
+        # Biomechanical sanity filters for humanoid poses
+        if frame.morphology in ("human", "biped"):
+            j = frame.joints
+            # Feet must never be higher than knees
+            for side in ["left", "right"]:
+                foot_k = f"{side}_ankle"
+                knee_k = f"{side}_knee"
+                if foot_k in j and knee_k in j:
+                    if j[foot_k].y >= j[knee_k].y - 0.05:
+                        j[foot_k].confidence = 0.0
+            # Wrists cannot be high above head in low-confidence distant detections
+            for side in ["left", "right"]:
+                wrist_k = f"{side}_wrist"
+                head_k = "nose"
+                if wrist_k in j and head_k in j:
+                    if j[wrist_k].y > j[head_k].y + 0.15 and j[wrist_k].confidence < 0.65:
+                        j[wrist_k].confidence = 0.0
+
         for name, joint in frame.joints.items():
             if joint.confidence < self.min_confidence or joint.visibility < self.min_confidence:
                 low_confidence.append(name)

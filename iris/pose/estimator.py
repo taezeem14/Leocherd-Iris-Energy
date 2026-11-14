@@ -11,8 +11,6 @@ from iris.core.events import EventBus, EventType, PipelineEvent
 from iris.core.exceptions import PoseEstimationError
 from iris.core.logging import get_logger
 from iris.core.pipeline import ExecutionContext, PipelineStage
-from iris.models.adapters.kinematic_tracker import KinematicPoseEstimator
-from iris.models.adapters.onnx_blazepose import ONNXBlazePoseEstimator
 from iris.pose.base import BasePoseEstimator, PoseFrame
 from iris.pose.confidence import ConfidenceFilter
 from iris.pose.human import HumanPoseSynthesizer
@@ -29,9 +27,13 @@ class PoseEstimatorFactory:
     def create(prefer_onnx: bool = True) -> BasePoseEstimator:
         if prefer_onnx:
             try:
+                from iris.models.adapters.onnx_blazepose import ONNXBlazePoseEstimator
+
                 return ONNXBlazePoseEstimator()
             except Exception as e:
                 logger.warning(f"Could not initialize ONNX BlazePose ({e}). Falling back to KinematicPoseEstimator.")
+        from iris.models.adapters.kinematic_tracker import KinematicPoseEstimator
+
         return KinematicPoseEstimator()
 
 

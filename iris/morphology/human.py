@@ -68,3 +68,17 @@ class HumanMorphology(BaseMorphology):
         self.add_bone("Bone_Hips_RightUpLeg", "Hips", "RightUpLeg")
         self.add_bone("Bone_RightUpLeg_RightLeg", "RightUpLeg", "RightLeg")
         self.add_bone("Bone_RightLeg_RightFoot", "RightLeg", "RightFoot")
+
+    @property
+    def relaxed_pose(self) -> Dict[str, np.ndarray]:
+        """Anatomical relaxed standing pose with arms resting at sides and upright posture."""
+        pose = {k: v.copy() for k, v in self._rest_pose.items()}
+        # Natural relaxed arms hanging down along sides
+        pose["LeftForeArm"] = np.array([-0.22, 1.17, 0.0], dtype=np.float32)
+        pose["LeftHand"] = np.array([-0.22, 0.90, 0.0], dtype=np.float32)
+        pose["RightForeArm"] = np.array([0.22, 1.17, 0.0], dtype=np.float32)
+        pose["RightHand"] = np.array([0.22, 0.90, 0.0], dtype=np.float32)
+        # Feet firmly on ground plane
+        pose["LeftFoot"] = np.array([-0.10, 0.10, 0.04], dtype=np.float32)
+        pose["RightFoot"] = np.array([0.10, 0.10, 0.04], dtype=np.float32)
+        return pose

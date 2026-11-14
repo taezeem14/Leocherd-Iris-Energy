@@ -1,45 +1,24 @@
-# Python
+# Python bytecode & cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
 
-# Virtual Environment
+# Virtual environment
 .venv/
+env/
 venv/
 ENV/
-env/
 
-# Package caches
-.cache/
-pip-wheel-metadata/
-
-# Output and temp files
+# Output files & large model binaries
 outputs/
-data/uploads/*
-!data/uploads/.gitkeep
-data/models/*
-!data/models/.gitkeep
-data/samples/*
-!data/samples/.gitkeep
-tmp/
-*.log
+data/models/*.onnx
+data/samples/*.mp4
+data/samples/*.mov
 
 # IDE & OS
 .vscode/
@@ -47,11 +26,5 @@ tmp/
 .DS_Store
 Thumbs.db
 
-# Blender temporary
-*.blend1
-*.blend2
-
-# Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/build/
+# Temp logs
+*.log

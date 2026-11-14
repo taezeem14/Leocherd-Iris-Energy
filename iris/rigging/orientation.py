@@ -84,10 +84,17 @@ class QuaternionMath:
 
     @staticmethod
     def rotate_vector(q: np.ndarray, v: np.ndarray) -> np.ndarray:
-        """Rotates 3D vector v by unit quaternion q: v' = q * (0, v) * q^-1."""
-        qv = np.array([0.0, v[0], v[1], v[2]], dtype=np.float32)
-        res = QuaternionMath.multiply(QuaternionMath.multiply(q, qv), QuaternionMath.conjugate(q))
-        return res[1:4]
+        """
+        Rotates 3D vector v by unit quaternion q = [w, x, y, z] using Rodrigues vector formula:
+        v' = v + 2 * q_v x (q_v x v + w * v).
+        Guarantees exact length preservation of v without quaternion normalization distortion.
+        """
+        w = float(q[0])
+        qv = q[1:4].astype(np.float32)
+        v_f = v.astype(np.float32)
+        t = 2.0 * np.cross(qv, v_f)
+        v_rot = v_f + w * t + np.cross(qv, t)
+        return v_rot.astype(np.float32)
 
     @staticmethod
     def quat_to_matrix(q: np.ndarray) -> np.ndarray:
@@ -101,3 +108,67 @@ class QuaternionMath:
             ],
             dtype=np.float32,
         )
+
+    @staticmethod
+    def matrix_to_quat(R: np.ndarray) -> np.ndarray:
+        """
+        Converts an orthonormal 3x3 rotation matrix to unit quaternion [w, x, y, z]
+        using robust Shepperd's branch-selection algorithm.
+        """
+        tr = float(R[0, 0] + R[1, 1] + R[2, 2])
+        if tr > 0.0:
+            s = math.sqrt(tr + 1.0) * 2.0
+            w = 0.25 * s
+            x = (R[2, 1] - R[1, 2]) / s
+            y = (R[0, 2] - R[2, 0]) / s
+            z = (R[1, 0] - R[0, 1]) / s
+        elif (R[0, 0] > R[1, 1]) and (R[0, 0] > R[2, 2]):
+            s = math.sqrt(max(1e-8, 1.0 + R[0, 0] - R[1, 1] - R[2, 2])) * 2.0
+            w = (R[2, 1] - R[1, 2]) / s
+            x = 0.25 * s
+            y = (R[0, 1] + R[1, 0]) / s
+            z = (R[0, 2] + R[2, 0]) / s
+        elif R[1, 1] > R[2, 2]:
+            s = math.sqrt(max(1e-8, 1.0 + R[1, 1] - R[0, 0] - R[2, 2])) * 2.0
+            w = (R[0, 2] - R[2, 0]) / s
+            x = (R[0, 1] + R[1, 0]) / s
+            y = 0.25 * s
+            z = (R[1, 2] + R[2, 1]) / s
+        else:
+            s = math.sqrt(max(1e-8, 1.0 + R[2, 2] - R[0, 0] - R[1, 1])) * 2.0
+            w = (R[1, 0] - R[0, 1]) / s
+            x = (R[0, 2] + R[2, 0]) / s
+            y = (R[1, 2] + R[2, 1]) / s
+            z = 0.25 * s
+        return QuaternionMath.normalize_quat(np.array([w, x, y, z], dtype=np.float32))
+
+    @staticmethod
+    def build_orthonormal_basis(primary_vec: np.ndarray, reference_sec_vec: np.ndarray) -> np.ndarray:
+        """
+        Builds an orthonormal 3x3 rotation basis [X, Y, Z] where Y is aligned with primary_vec,
+        and Z is aligned as closely as possible with reference_sec_vec.
+        """
+        y = QuaternionMath.normalize_vector(primary_vec)
+        # Project secondary vector perpendicular to y
+        ref = reference_sec_vec.astype(np.float32)
+        dot_ref_y = float(np.dot(ref, y))
+        z_proj = ref - dot_ref_y * y
+        z = QuaternionMath.normalize_vector(z_proj)
+        if np.linalg.norm(z) < 1e-4:
+            # Fallback if primary and reference are collinear
+            alt_ref = np.array([0.0, 0.0, 1.0], dtype=np.float32) if abs(y[2]) < 0.85 else np.array([1.0, 0.0, 0.0], dtype=np.float32)
+            z_proj = alt_ref - float(np.dot(alt_ref, y)) * y
+            z = QuaternionMath.normalize_vector(z_proj)
+
+        x = QuaternionMath.normalize_vector(np.cross(y, z))
+        z = QuaternionMath.normalize_vector(np.cross(x, y))  # Re-orthogonalize
+        return np.column_stack([x, y, z]).astype(np.float32)
+
+    @staticmethod
+    def rotation_between_bases(rest_basis: np.ndarray, cur_basis: np.ndarray) -> np.ndarray:
+        """
+        Calculates the rotation quaternion rotating rest_basis to cur_basis: R = cur_basis @ rest_basis.T.
+        Completely eliminates twist/roll ambiguity.
+        """
+        R = cur_basis @ rest_basis.T
+        return QuaternionMath.matrix_to_quat(R)

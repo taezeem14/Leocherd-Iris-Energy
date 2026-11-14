@@ -16,7 +16,6 @@ from iris.core.exceptions import ModelLoadError
 from iris.core.logging import get_logger
 from iris.models.downloads import ModelDownloader
 from iris.pose.base import BasePoseEstimator, Joint3D, PoseFrame
-from iris.pose.human import BLAZEPOSE_KEYPOINTS
 
 logger = get_logger("iris.models.adapters.blazepose")
 
@@ -116,6 +115,8 @@ class ONNXBlazePoseEstimator(BasePoseEstimator):
         ch = max(1.0, cy2 - cy1)
 
         joints: Dict[str, Joint3D] = {}
+
+        from iris.pose.human import BLAZEPOSE_KEYPOINTS
 
         # 33 BlazePose landmark points
         for i in range(33):

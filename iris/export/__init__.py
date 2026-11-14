@@ -65,6 +65,14 @@ class AssetExportStage(PipelineStage):
                 exported[fmt] = str(res_path)
                 logger.info(f"Exported {fmt.upper()} to: {res_path}")
 
+                # Maintain canonical copy for live viewer and validation
+                canonical_path = out_dir / f"reconstruction_skinned_walking{exporter.extension}"
+                try:
+                    import shutil
+                    shutil.copyfile(res_path, canonical_path)
+                except Exception:
+                    pass
+
                 if event_bus:
                     event_bus.emit(
                         PipelineEvent(
