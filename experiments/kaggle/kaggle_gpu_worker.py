@@ -22,6 +22,8 @@ except ImportError:
 
 LANDMARK_MAP = {
     0: "Nose",
+    7: "LeftEar",
+    8: "RightEar",
     11: "LeftShoulder",
     12: "RightShoulder",
     13: "LeftArm",
@@ -92,8 +94,32 @@ def process_video(video_path: str, max_frames: int | None = None):
             }
 
             nose = wl[0]
-            frame_joints["Neck"] = {"x": float(chest_x), "y": float(chest_y + 0.12), "z": float(chest_z), "confidence": 1.0}
-            frame_joints["Head"] = {"x": float(nose.x), "y": float(-nose.y + 1.0), "z": float(nose.z), "confidence": float(nose.visibility)}
+            l_ear, r_ear = wl[7], wl[8]
+
+            # Head Center (Ear midpoint or Nose offset)
+            if (l_ear.visibility or 0) > 0.4 and (r_ear.visibility or 0) > 0.4:
+                head_x = (l_ear.x + r_ear.x) * 0.5
+                head_y = -(l_ear.y + r_ear.y) * 0.5 + 1.0
+                head_z = (l_ear.z + r_ear.z) * 0.5
+            else:
+                head_x = nose.x
+                head_y = -nose.y + 1.0
+                head_z = nose.z - 0.05
+
+            frame_joints["Head"] = {
+                "x": float(head_x),
+                "y": float(head_y),
+                "z": float(head_z),
+                "confidence": float(nose.visibility or 1.0),
+            }
+
+            # Neck (Dynamic anatomical bridge smoothly following Head and Spine)
+            frame_joints["Neck"] = {
+                "x": float(chest_x * 0.45 + head_x * 0.55),
+                "y": float(chest_y * 0.45 + head_y * 0.55),
+                "z": float(chest_z * 0.45 + head_z * 0.55),
+                "confidence": 1.0,
+            }
 
             for lm_idx, j_name in LANDMARK_MAP.items():
                 lm = wl[lm_idx]
