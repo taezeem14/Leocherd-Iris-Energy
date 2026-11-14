@@ -29,7 +29,7 @@ cells = [
             "# 1. Environment & Hardware Verification\n",
             "!nvidia-smi\n",
             "\n",
-            "!pip install -q opencv-python-headless torch torchvision scipy plotly\n",
+            "!pip install -q mediapipe opencv-python-headless scipy plotly\n",
             "!wget -q -O pose_landmarker.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task\n",
             "\n",
             "import os\n",
