@@ -140,8 +140,8 @@ class GltfExporter(BaseAssetExporter):
         # 2b. Root translation animation
         root_trans = animation.root_translations.astype(np.float32)
         root_trans_bytes = root_trans.tobytes()
-        min_root = [float(np.nextafter(np.min(root_trans[:, d]), -np.inf)) for d in range(3)] if T > 0 else [0.0, 0.0, 0.0]
-        max_root = [float(np.nextafter(np.max(root_trans[:, d]), np.inf)) for d in range(3)] if T > 0 else [0.0, 0.0, 0.0]
+        min_root = [float(np.min(root_trans[:, d])) for d in range(3)] if T > 0 else [0.0, 0.0, 0.0]
+        max_root = [float(np.max(root_trans[:, d])) for d in range(3)] if T > 0 else [0.0, 0.0, 0.0]
         trans_acc_idx = add_buffer_data(
             root_trans_bytes,
             component_type=5126,
@@ -213,8 +213,8 @@ class GltfExporter(BaseAssetExporter):
         verts, norms, tri_indices, j_indices, j_weights = ProxyMeshGenerator.create_skinned_mannequin(skeleton)
 
         # 3a. Add Mesh Vertex Attributes to Buffer
-        min_pos = [float(np.nextafter(np.min(verts[:, d]), -np.inf)) for d in range(3)]
-        max_pos = [float(np.nextafter(np.max(verts[:, d]), np.inf)) for d in range(3)]
+        min_pos = [float(np.min(verts[:, d])) for d in range(3)]
+        max_pos = [float(np.max(verts[:, d])) for d in range(3)]
         pos_acc_idx = add_buffer_data(
             verts.tobytes(),
             component_type=5126,  # FLOAT

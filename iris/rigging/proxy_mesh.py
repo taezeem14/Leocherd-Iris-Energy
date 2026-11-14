@@ -510,9 +510,9 @@ class ProxyMeshGenerator:
             normal = normal / (np.linalg.norm(normal) + 1e-8)
             verts.append([float(pos[0]), float(pos[1]), float(pos[2])])
             norms.append([float(normal[0]), float(normal[1]), float(normal[2])])
-            # Knee cap moves with knee, gently weighted between thigh and shin
-            j_idx.append([knee_joint_idx, thigh_joint_idx, shin_joint_idx, 0])
-            j_w.append([0.60, 0.20, 0.20, 0.0])
+            # Knee cap moves with knee, gently blended with thigh
+            j_idx.append([knee_joint_idx, thigh_joint_idx, 0, 0])
+            j_w.append([0.70, 0.30, 0.0, 0.0])
 
         tris = [
             [0, 2, 1], [1, 2, 3],
@@ -823,22 +823,22 @@ class ProxyMeshGenerator:
         clean_joint_weights = np.zeros((V, 4), dtype=np.float32)
 
         for v_idx in range(V):
-            pairs = []
+            joint_map: Dict[int, float] = {}
             for k in range(4):
                 w = float(raw_joint_weights[v_idx, k])
                 j = int(raw_joint_indices[v_idx, k])
                 if w > 1e-5:
-                    pairs.append((w, j))
+                    joint_map[j] = joint_map.get(j, 0.0) + w
 
-            pairs.sort(key=lambda p: p[0], reverse=True)
-            total_w = sum(p[0] for p in pairs)
+            sorted_pairs = sorted(joint_map.items(), key=lambda p: p[1], reverse=True)
+            total_w = sum(p[1] for p in sorted_pairs[:4])
             if total_w < 1e-6:
                 clean_joint_weights[v_idx, 0] = 1.0
                 clean_joint_indices[v_idx, 0] = 0
             else:
-                for k, (w, j) in enumerate(pairs[:4]):
-                    clean_joint_weights[v_idx, k] = w / total_w
-                    clean_joint_indices[v_idx, k] = j
+                for k, (j, w) in enumerate(sorted_pairs[:4]):
+                    clean_joint_weights[v_idx, k] = float(w / total_w)
+                    clean_joint_indices[v_idx, k] = int(j)
 
         return (
             final_verts.astype(np.float32),
