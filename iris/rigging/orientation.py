@@ -83,6 +83,31 @@ class QuaternionMath:
         return np.array([q[0], -q[1], -q[2], -q[3]], dtype=np.float32)
 
     @staticmethod
+    def clamp_rotation_angle(q: np.ndarray, max_angle_rad: float) -> np.ndarray:
+        """
+        Clamps a unit quaternion q = [w, x, y, z] so its angular displacement from
+        identity does not exceed max_angle_rad.
+        Preserves the rotation axis perfectly while limiting extreme deformation.
+        """
+        q_norm = QuaternionMath.normalize_quat(q)
+        w = float(q_norm[0])
+        sign = 1.0 if w >= 0.0 else -1.0
+        w *= sign
+        v = q_norm[1:4] * sign
+
+        angle = 2.0 * math.acos(max(-1.0, min(1.0, w)))
+        if angle <= max_angle_rad or angle < 1e-5:
+            return q_norm
+
+        half_clamped = max_angle_rad * 0.5
+        w_clamped = math.cos(half_clamped)
+        v_norm = float(np.linalg.norm(v))
+        if v_norm < 1e-6:
+            return QuaternionMath.identity()
+        v_clamped = (v / v_norm) * math.sin(half_clamped)
+        return np.array([w_clamped, v_clamped[0], v_clamped[1], v_clamped[2]], dtype=np.float32)
+
+    @staticmethod
     def rotate_vector(q: np.ndarray, v: np.ndarray) -> np.ndarray:
         """
         Rotates 3D vector v by unit quaternion q = [w, x, y, z] using Rodrigues vector formula:

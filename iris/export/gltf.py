@@ -278,11 +278,11 @@ class GltfExporter(BaseAssetExporter):
 
         materials = [
             {
-                "name": "Iris_Mannequin_Material",
+                "name": "Iris_Human_Material",
                 "pbrMetallicRoughness": {
-                    "baseColorFactor": [0.22, 0.65, 0.95, 1.0],  # Iris Blue/Cyan
-                    "metallicFactor": 0.15,
-                    "roughnessFactor": 0.45,
+                    "baseColorFactor": [0.85, 0.72, 0.62, 1.0],  # Natural anatomical warm skin tone
+                    "metallicFactor": 0.05,
+                    "roughnessFactor": 0.65,
                 },
                 "doubleSided": True,
             }

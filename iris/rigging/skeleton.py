@@ -155,12 +155,12 @@ class Skeleton:
             p_l = self.joints["LeftUpLeg"]
             p_r = self.joints["RightUpLeg"]
             y_rest = p_spine.rest_world_pos - node.rest_world_pos
-            lat_rest = p_l.rest_world_pos - p_r.rest_world_pos
-            z_rest = np.cross(lat_rest, y_rest)
+            lat_rest = p_r.rest_world_pos - p_l.rest_world_pos  # Lateral pointing strictly Right (+X)
+            z_rest = np.cross(lat_rest, y_rest)                 # Right x Up = Forward (+Z)
             b_rest = QuaternionMath.build_orthonormal_basis(y_rest, z_rest)
 
             y_cur = p_spine.world_pos - node.world_pos
-            lat_cur = p_l.world_pos - p_r.world_pos
+            lat_cur = p_r.world_pos - p_l.world_pos
             z_cur = np.cross(lat_cur, y_cur)
             b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
             q_world = QuaternionMath.rotation_between_bases(b_rest, b_cur)
@@ -170,12 +170,12 @@ class Skeleton:
             p_l = self.joints["LeftShoulder"]
             p_r = self.joints["RightShoulder"]
             y_rest = p_neck.rest_world_pos - node.rest_world_pos
-            lat_rest = p_l.rest_world_pos - p_r.rest_world_pos
-            z_rest = np.cross(lat_rest, y_rest)
+            lat_rest = p_r.rest_world_pos - p_l.rest_world_pos  # Right (+X)
+            z_rest = np.cross(lat_rest, y_rest)                 # Forward (+Z)
             b_rest = QuaternionMath.build_orthonormal_basis(y_rest, z_rest)
 
             y_cur = p_neck.world_pos - node.world_pos
-            lat_cur = p_l.world_pos - p_r.world_pos
+            lat_cur = p_r.world_pos - p_l.world_pos
             z_cur = np.cross(lat_cur, y_cur)
             b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
             q_world = QuaternionMath.rotation_between_bases(b_rest, b_cur)
@@ -184,8 +184,8 @@ class Skeleton:
             p_head = self.joints["Head"]
             y_rest = p_head.rest_world_pos - node.rest_world_pos
             if "LeftShoulder" in self.joints and "RightShoulder" in self.joints:
-                lat_rest = self.joints["LeftShoulder"].rest_world_pos - self.joints["RightShoulder"].rest_world_pos
-                lat_cur = self.joints["LeftShoulder"].world_pos - self.joints["RightShoulder"].world_pos
+                lat_rest = self.joints["RightShoulder"].rest_world_pos - self.joints["LeftShoulder"].rest_world_pos
+                lat_cur = self.joints["RightShoulder"].world_pos - self.joints["LeftShoulder"].world_pos
             else:
                 lat_rest = np.array([1.0, 0.0, 0.0], dtype=np.float32)
                 lat_cur = np.array([1.0, 0.0, 0.0], dtype=np.float32)
@@ -202,8 +202,8 @@ class Skeleton:
             p_neck = self.joints["Neck"]
             y_rest = node.rest_world_pos - p_neck.rest_world_pos
             if "LeftShoulder" in self.joints and "RightShoulder" in self.joints:
-                lat_rest = self.joints["LeftShoulder"].rest_world_pos - self.joints["RightShoulder"].rest_world_pos
-                lat_cur = self.joints["LeftShoulder"].world_pos - self.joints["RightShoulder"].world_pos
+                lat_rest = self.joints["RightShoulder"].rest_world_pos - self.joints["LeftShoulder"].rest_world_pos
+                lat_cur = self.joints["RightShoulder"].world_pos - self.joints["LeftShoulder"].world_pos
             else:
                 lat_rest = np.array([1.0, 0.0, 0.0], dtype=np.float32)
                 lat_cur = np.array([1.0, 0.0, 0.0], dtype=np.float32)
@@ -237,6 +237,17 @@ class Skeleton:
             q_parent_inv = QuaternionMath.conjugate(parent_node.world_rotation)
             node.local_rotation = QuaternionMath.multiply(q_parent_inv, node.world_rotation)
             node.local_pos = node.world_pos - parent_node.world_pos
+
+            # Anatomical biomechanical limits to prevent distortion/unnatural twisting:
+            if name_lower == "neck":
+                node.local_rotation = QuaternionMath.clamp_rotation_angle(node.local_rotation, 0.65)  # ~37 deg max cervical excursion
+                node.world_rotation = QuaternionMath.multiply(parent_node.world_rotation, node.local_rotation)
+            elif name_lower == "head":
+                node.local_rotation = QuaternionMath.clamp_rotation_angle(node.local_rotation, 0.55)  # ~31 deg max head-on-neck
+                node.world_rotation = QuaternionMath.multiply(parent_node.world_rotation, node.local_rotation)
+            elif "spine" in name_lower:
+                node.local_rotation = QuaternionMath.clamp_rotation_angle(node.local_rotation, 0.52)  # ~30 deg spine flexion
+                node.world_rotation = QuaternionMath.multiply(parent_node.world_rotation, node.local_rotation)
         else:
             node.local_rotation = node.world_rotation.copy()
             node.local_pos = node.world_pos.copy()

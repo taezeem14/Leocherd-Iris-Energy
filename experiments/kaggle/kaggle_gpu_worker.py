@@ -77,16 +77,19 @@ def process_video(video_path: str, max_frames: int | None = None):
             hips_x = (l_hip.x + r_hip.x) * 0.5
             hips_y = -(l_hip.y + r_hip.y) * 0.5
             hips_z = (l_hip.z + r_hip.z) * 0.5
-            frame_joints["Hips"] = {"x": float(hips_x), "y": float(hips_y) + 1.0, "z": float(hips_z), "confidence": 1.0}
+            hips_x = (l_hip.x + r_hip.x) * 0.5
+            hips_y = -(l_hip.y + r_hip.y) * 0.5 + 1.0
+            hips_z = -(l_hip.z + r_hip.z) * 0.5
+            frame_joints["Hips"] = {"x": float(hips_x), "y": float(hips_y), "z": float(hips_z), "confidence": 1.0}
 
             chest_x = (l_sh.x + r_sh.x) * 0.5
             chest_y = -(l_sh.y + r_sh.y) * 0.5 + 1.0
-            chest_z = (l_sh.z + r_sh.z) * 0.5
+            chest_z = -(l_sh.z + r_sh.z) * 0.5
             frame_joints["Chest"] = {"x": float(chest_x), "y": float(chest_y), "z": float(chest_z), "confidence": 1.0}
 
             frame_joints["Spine"] = {
                 "x": float((hips_x + chest_x) * 0.5),
-                "y": float((hips_y + 1.0 + chest_y) * 0.5),
+                "y": float((hips_y + chest_y) * 0.5),
                 "z": float((hips_z + chest_z) * 0.5),
                 "confidence": 1.0,
             }
@@ -98,11 +101,11 @@ def process_video(video_path: str, max_frames: int | None = None):
             if (l_ear.visibility or 0) > 0.4 and (r_ear.visibility or 0) > 0.4:
                 head_x = (l_ear.x + r_ear.x) * 0.5
                 head_y = -(l_ear.y + r_ear.y) * 0.5 + 1.0
-                head_z = (l_ear.z + r_ear.z) * 0.5
+                head_z = -(l_ear.z + r_ear.z) * 0.5
             else:
                 head_x = nose.x
                 head_y = -nose.y + 1.0
-                head_z = nose.z - 0.05
+                head_z = -nose.z
 
             frame_joints["Head"] = {
                 "x": float(head_x),
@@ -111,12 +114,20 @@ def process_video(video_path: str, max_frames: int | None = None):
                 "confidence": float(nose.visibility or 1.0),
             }
 
-            # Neck (Dynamic anatomical bridge smoothly following Head and Spine)
+            # Neck (Dynamic anatomical cervical bridge smoothly following Head and Spine)
             frame_joints["Neck"] = {
-                "x": float(chest_x * 0.45 + head_x * 0.55),
-                "y": float(chest_y * 0.45 + head_y * 0.55),
-                "z": float(chest_z * 0.45 + head_z * 0.55),
+                "x": float(chest_x * 0.50 + head_x * 0.50),
+                "y": float(chest_y * 0.50 + head_y * 0.50),
+                "z": float(chest_z * 0.50 + head_z * 0.50),
                 "confidence": 1.0,
+            }
+
+            # Nose (Facial gaze landmark)
+            frame_joints["Nose"] = {
+                "x": float(nose.x),
+                "y": float(-nose.y + 1.0),
+                "z": float(-nose.z),
+                "confidence": float(nose.visibility or 1.0),
             }
 
             for lm_idx, j_name in LANDMARK_MAP.items():
@@ -124,7 +135,7 @@ def process_video(video_path: str, max_frames: int | None = None):
                 frame_joints[j_name] = {
                     "x": float(lm.x),
                     "y": float(-lm.y + 1.0),
-                    "z": float(lm.z),
+                    "z": float(-lm.z),
                     "confidence": float(lm.visibility),
                     "visibility": float(lm.visibility),
                 }
