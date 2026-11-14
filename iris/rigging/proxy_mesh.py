@@ -127,7 +127,8 @@ class ProxyMeshGenerator:
         neck_joint_idx: int,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Generates a stylized humanoid head with cranium, jawline, and directional visor faceplate.
+        Generates a stylized humanoid head with sculpted cranium, temple arches,
+        zygomatic cheekbones, tapered jawline, and chin.
         """
         verts: List[List[float]] = []
         norms: List[List[float]] = []
@@ -135,40 +136,59 @@ class ProxyMeshGenerator:
         j_w: List[List[float]] = []
         indices: List[List[int]] = []
 
-        # 1. Main Cranium (lat/lon ellipsoid, wider at top, tapering to jaw)
-        lat_segs = 8
-        lon_segs = 12
-        r_head = 0.095
+        # Latitudinal rings from cranial apex (+Y) to jaw base (-Y)
+        lat_segs = 10
+        lon_segs = 16
+        r_head = 0.092
 
         for i in range(lat_segs + 1):
-            lat = math.pi * (float(i) / lat_segs - 0.5)
-            y = math.sin(lat)
+            rel_i = float(i) / float(lat_segs)
+            lat = math.pi * (0.5 - rel_i)  # +pi/2 at top, -pi/2 at bottom
+            sin_lat = math.sin(lat)
             cos_lat = math.cos(lat)
 
-            # Cranium taper: broader at top, tapered at jaw
-            taper_x = 0.85 if y < 0 else 0.95
-            taper_z = 0.80 if y < -0.3 else 1.05
+            y_pos = sin_lat * r_head * 1.15 + 0.03
 
             for j in range(lon_segs):
-                lon = 2.0 * math.pi * float(j) / lon_segs
-                x = cos_lat * math.sin(lon)
-                z = cos_lat * math.cos(lon)
+                lon = 2.0 * math.pi * float(j) / float(lon_segs)
+                sin_lon = math.sin(lon)
+                cos_lon = math.cos(lon)
 
-                # Push forward slightly for jaw
-                jaw_offset = 0.02 if (y < -0.2 and z > 0) else 0.0
+                # Base ellipsoid coordinates
+                x = cos_lat * sin_lon
+                z = cos_lat * cos_lon
+
+                # Anatomical head sculpting:
+                # 1. Temporal taper and cranial width
+                width_scale = 0.82 if z > 0 else 0.88
+                if sin_lat < -0.2:  # Lower face / jaw
+                    # Jaw taper inwards toward chin
+                    taper_jaw = 0.55 + 0.45 * (sin_lat + 1.0)
+                    width_scale *= taper_jaw
+                    # Chin thrust forward
+                    if z > 0:
+                        z_offset = 0.025 * (1.0 - abs(x)) * ((-sin_lat - 0.2) / 0.8)
+                    else:
+                        z_offset = -0.010
+                elif sin_lat > 0.3:  # Cranial crown
+                    z_offset = 0.0
+                else:  # Mid face: cheekbone and brow definition
+                    width_scale *= 0.90
+                    z_offset = 0.015 if z > 0 else 0.0
 
                 pos = center + np.array(
-                    [x * r_head * taper_x, (y * r_head * 1.15) + 0.04, (z * r_head * taper_z) + jaw_offset],
+                    [x * r_head * width_scale, y_pos, z * r_head * 1.05 + z_offset],
                     dtype=np.float32,
                 )
-                normal = np.array([x, y, z], dtype=np.float32)
+
+                normal = np.array([x / width_scale, sin_lat, z], dtype=np.float32)
                 normal = normal / (np.linalg.norm(normal) + 1e-8)
 
                 verts.append([float(pos[0]), float(pos[1]), float(pos[2])])
                 norms.append([float(normal[0]), float(normal[1]), float(normal[2])])
 
-                # Blend slightly with neck at bottom of head
-                w_neck = 0.25 if y < -0.4 else 0.0
+                # Smooth skinning: upper cranium is 100% Head, lower jaw blends gently into Neck
+                w_neck = 0.25 if sin_lat < -0.5 else 0.0
                 j_idx.append([head_joint_idx, neck_joint_idx, 0, 0])
                 j_w.append([1.0 - w_neck, w_neck, 0.0, 0.0])
 
@@ -177,46 +197,8 @@ class ProxyMeshGenerator:
                 first = i * lon_segs + j
                 second = first + lon_segs
                 j_next = (j + 1) % lon_segs
-                indices.append([first, second, (i * lon_segs + j_next)])
-                indices.append([(i * lon_segs + j_next), second, (second + 1 if j_next != 0 else second + 1 - lon_segs)])
-
-        # 2. Sleek Visor Plate on Face (+Z face, angled, stylish)
-        v_offset = len(verts)
-        visor_pts = [
-            # Top edge (temple left to temple right)
-            [-0.055, 0.06, 0.088],
-            [0.0, 0.065, 0.098],
-            [0.055, 0.06, 0.088],
-            # Mid line (cheek left, nose tip, cheek right)
-            [-0.050, 0.01, 0.092],
-            [0.0, 0.015, 0.106],
-            [0.050, 0.01, 0.092],
-            # Bottom line (mouth/chin angle)
-            [-0.035, -0.03, 0.082],
-            [0.0, -0.025, 0.092],
-            [0.035, -0.03, 0.082],
-        ]
-
-        for p in visor_pts:
-            pos = center + np.array(p, dtype=np.float32)
-            normal = np.array([p[0] * 0.5, p[1] * 0.3, 0.95], dtype=np.float32)
-            normal = normal / (np.linalg.norm(normal) + 1e-8)
-            verts.append([float(pos[0]), float(pos[1]), float(pos[2])])
-            norms.append([float(normal[0]), float(normal[1]), float(normal[2])])
-            j_idx.append([head_joint_idx, 0, 0, 0])
-            j_w.append([1.0, 0.0, 0.0, 0.0])
-
-        # Triangulate visor plate
-        visor_tris = [
-            # Top quads
-            [0, 3, 1], [1, 3, 4],
-            [1, 4, 2], [2, 4, 5],
-            # Bottom quads
-            [3, 6, 4], [4, 6, 7],
-            [4, 7, 5], [5, 7, 8],
-        ]
-        for tri in visor_tris:
-            indices.append([v_offset + tri[0], v_offset + tri[1], v_offset + tri[2]])
+                indices.append([first, second, i * lon_segs + j_next])
+                indices.append([i * lon_segs + j_next, second, second + (j_next - j)])
 
         return (
             np.array(verts, dtype=np.float32),
@@ -239,7 +221,8 @@ class ProxyMeshGenerator:
         j_neck: int,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Generates a continuous, sculpted torso (pelvis, waist, ribcage, chest, clavicles)
+        Generates a continuous, sculpted athletic humanoid torso and trapezius collar
+        (pelvis, iliac crest, waist, ribcage, pectorals, clavicle arch, trapezius)
         with smooth 4-joint blend skinning that eliminates pinching.
         """
         verts: List[List[float]] = []
@@ -249,27 +232,28 @@ class ProxyMeshGenerator:
         indices: List[List[int]] = []
 
         slices = 16
-        # Define 7 anatomical cross-sections along the torso height from pelvis to neck base
-        # [y_pos, rx (width), rz (depth), z_center_offset, (w_hips, w_spine, w_chest, w_neck)]
         y_min = float(p_hips[1] - 0.08)
-        y_max = float(p_chest[1] + 0.10)
+        y_max = float(p_chest[1] + 0.09)
         h_total = y_max - y_min
 
+        # Natural athletic human proportions [rel_y, rx, rz, cz, (w_hips, w_spine, w_chest, w_neck)]
         sections = [
             # 0: Lower Pelvis / Groin
-            (0.00, 0.115, 0.080, -0.010, (0.95, 0.05, 0.0, 0.0)),
+            (0.00, 0.145, 0.095, -0.008, (0.95, 0.05, 0.0, 0.0)),
             # 1: Pelvic Girdle / Iliac Crest
-            (0.18, 0.138, 0.088, -0.005, (0.80, 0.20, 0.0, 0.0)),
-            # 2: Waist / Navel
-            (0.38, 0.112, 0.075, 0.005, (0.25, 0.65, 0.10, 0.0)),
-            # 3: Lower Ribcage
-            (0.55, 0.132, 0.088, 0.012, (0.05, 0.40, 0.55, 0.0)),
-            # 4: Mid-Chest / Pectorals
-            (0.72, 0.155, 0.098, 0.018, (0.0, 0.10, 0.85, 0.05)),
-            # 5: Upper Chest / Clavicle Arch
-            (0.88, 0.150, 0.090, 0.010, (0.0, 0.0, 0.85, 0.15)),
-            # 6: Neck Base
-            (1.00, 0.075, 0.065, 0.000, (0.0, 0.0, 0.50, 0.50)),
+            (0.18, 0.150, 0.098, -0.005, (0.80, 0.20, 0.0, 0.0)),
+            # 2: Navel / Lower Abdomen
+            (0.36, 0.138, 0.090, 0.002, (0.20, 0.70, 0.10, 0.0)),
+            # 3: Natural Athletic Waist
+            (0.52, 0.134, 0.088, 0.006, (0.05, 0.65, 0.30, 0.0)),
+            # 4: Lower Ribcage
+            (0.68, 0.148, 0.096, 0.012, (0.0, 0.35, 0.65, 0.0)),
+            # 5: Mid-Chest / Pectorals
+            (0.82, 0.168, 0.110, 0.016, (0.0, 0.10, 0.85, 0.05)),
+            # 6: Upper Chest / Clavicle Arch
+            (0.92, 0.162, 0.100, 0.010, (0.0, 0.0, 0.85, 0.15)),
+            # 7: Trapezius / Neck Base Collar
+            (1.00, 0.088, 0.075, 0.000, (0.0, 0.0, 0.50, 0.50)),
         ]
 
         for s_idx, (rel_y, rx, rz, cz, weights) in enumerate(sections):
@@ -280,7 +264,7 @@ class ProxyMeshGenerator:
                 sin_th = math.sin(theta)
 
                 # Anatomical chest contour: flatten back slightly, pronounce pectoral curvature in front
-                adj_z = rz * (1.15 if sin_th > 0 else 0.90)
+                adj_z = rz * (1.12 if sin_th > 0 else 0.92)
                 px = rx * cos_th
                 py = y_curr
                 pz = adj_z * sin_th + cz
@@ -291,7 +275,6 @@ class ProxyMeshGenerator:
                 verts.append([float(px), float(py), float(pz)])
                 norms.append([float(normal[0]), float(normal[1]), float(normal[2])])
 
-                # 4-way blend across torso chain
                 j_idx.append([j_hips, j_spine, j_chest, j_neck])
                 j_w.append([float(weights[0]), float(weights[1]), float(weights[2]), float(weights[3])])
 
@@ -656,19 +639,27 @@ class ProxyMeshGenerator:
             )
             append_part(v, n, idx, ji, jw)
 
-        # 3. Neck Column
+        # 3. Sculpted Neck Column (Seamlessly connects Trapezius collar to Jaw/Skull base)
         if "Neck" in joint_to_idx and "Head" in joint_to_idx:
+            p_chest = get_pos("Chest")
+            p_neck = get_pos("Neck")
+            p_head = get_pos("Head")
+            neck_base_y = float(p_chest[1] + 0.08)  # Matches top of torso trapezius collar
+            neck_top_y = float(p_head[1] - 0.05)    # Enters base of skull / jawline
+
             v, n, idx, ji, jw = cls.generate_loft_segment(
-                p_start=get_pos("Neck"),
-                p_end=get_pos("Head") - np.array([0.0, 0.04, 0.0], dtype=np.float32),
-                radius_x_start=0.045,
-                radius_z_start=0.045,
-                radius_x_end=0.042,
-                radius_z_end=0.042,
+                p_start=np.array([p_neck[0], neck_base_y, p_neck[2]], dtype=np.float32),
+                p_end=np.array([p_head[0], neck_top_y, p_head[2]], dtype=np.float32),
+                radius_x_start=0.082,  # Wide muscular trapezius insertion
+                radius_z_start=0.072,
+                radius_x_end=0.056,    # Tapered into jaw and occiput
+                radius_z_end=0.056,
                 j_parent=get_idx("Neck"),
                 j_child=get_idx("Head"),
-                slices=10,
-                rings=4,
+                slices=16,
+                rings=6,
+                bulge_center=0.45,
+                bulge_amount=0.08,
             )
             append_part(v, n, idx, ji, jw)
 

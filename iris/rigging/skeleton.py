@@ -180,6 +180,42 @@ class Skeleton:
             b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
             q_world = QuaternionMath.rotation_between_bases(b_rest, b_cur)
 
+        elif name_lower == "neck" and "Head" in self.joints:
+            p_head = self.joints["Head"]
+            y_rest = p_head.rest_world_pos - node.rest_world_pos
+            if "LeftShoulder" in self.joints and "RightShoulder" in self.joints:
+                lat_rest = self.joints["LeftShoulder"].rest_world_pos - self.joints["RightShoulder"].rest_world_pos
+                lat_cur = self.joints["LeftShoulder"].world_pos - self.joints["RightShoulder"].world_pos
+            else:
+                lat_rest = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+                lat_cur = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+            z_rest = np.cross(lat_rest, y_rest)
+            b_rest = QuaternionMath.build_orthonormal_basis(y_rest, z_rest)
+
+            y_cur = p_head.world_pos - node.world_pos
+            z_cur = np.cross(lat_cur, y_cur)
+            b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
+            q_world = QuaternionMath.rotation_between_bases(b_rest, b_cur)
+
+        elif name_lower == "head" and "Neck" in self.joints:
+            p_neck = self.joints["Neck"]
+            y_rest = node.rest_world_pos - p_neck.rest_world_pos
+            if "LeftShoulder" in self.joints and "RightShoulder" in self.joints:
+                lat_rest = self.joints["LeftShoulder"].rest_world_pos - self.joints["RightShoulder"].rest_world_pos
+                lat_cur = self.joints["LeftShoulder"].world_pos - self.joints["RightShoulder"].world_pos
+            else:
+                lat_rest = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+                lat_cur = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+            z_rest = np.cross(lat_rest, y_rest)
+            b_rest = QuaternionMath.build_orthonormal_basis(y_rest, z_rest)
+
+            y_cur = node.world_pos - p_neck.world_pos
+            z_cur = np.cross(lat_cur, y_cur)
+            b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
+            q_world = QuaternionMath.rotation_between_bases(b_rest, b_cur)
+
         if q_world is not None:
             node.world_rotation = q_world
         elif node.children_names:
