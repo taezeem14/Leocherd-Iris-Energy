@@ -1,0 +1,30 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+
+# Virtual environment
+.venv/
+env/
+venv/
+ENV/
+
+# Output files & large model binaries
+outputs/
+data/models/*.onnx
+data/samples/*.mp4
+data/samples/*.mov
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temp logs
+*.log
