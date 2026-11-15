@@ -189,19 +189,45 @@ python main.py reconstruct data/samples/online_walking_sample.mp4 \
 
 ---
 
-### 3. Cloud GPU Acceleration with Kaggle
-For high-resolution videos or machines without a discrete GPU, use our pre-built Kaggle GPU pipeline for free cloud inference:
+### 3. AI 3D Surface & Mesh Extraction (Depth Anything V2 / SfM)
 
-1. Navigate to [`experiments/kaggle/leocherd_iris_gpu_inference.ipynb`](experiments/kaggle/leocherd_iris_gpu_inference.ipynb).
-2. Create a new notebook on [Kaggle](https://www.kaggle.com/) and enable **Accelerator: GPU T4 x2**.
-3. Upload your video file (e.g., `dance.mp4`) into the Kaggle environment.
-4. Run all notebook cells. The notebook will:
-   - Run accelerated multi-threaded pose extraction (with automatic fallback to Google LiteRT XNNPACK CPU if headless Linux GPU contexts are restricted).
-   - Apply metric root-relative coordinate translation.
-   - Smooth trajectories with Savitzky-Golay filtering.
-   - Export `iris_kaggle_pose_data.json`.
-5. Download `iris_kaggle_pose_data.json` to your local machine.
-6. Generate 3D character rigs locally in **under 2 seconds**:
+Extract real 3D point clouds and textured surface polygon meshes directly from video using state-of-the-art monocular depth estimation (**Depth Anything V2** / **DPT**) or OpenCV **Structure-from-Motion (SfM)**:
+
+```bash
+# 1. Monocular AI Depth & Poisson Surface Mesh Extraction (Depth Anything V2 + Open3D)
+python main.py mesh-reconstruct data/samples/online_walking_sample.mp4 \
+  --method depth_anything \
+  --frame-interval 10 \
+  --max-frames 12 \
+  --output-dir outputs/surface_reconstruction
+
+# 2. Traditional Multi-View Structure-from-Motion (SIFT + Triangulation)
+python main.py mesh-reconstruct data/samples/online_walking_sample.mp4 \
+  --method sfm \
+  --frame-interval 15 \
+  --output-dir outputs/sfm_sparse
+```
+
+**Generated Surface Assets in `outputs/surface_reconstruction/`:**
+- `surface_mesh.obj`: Standard textured Wavefront 3D mesh ready for Blender, Maya, or ZBrush.
+- `surface_mesh.ply`: High-resolution polygon mesh with per-vertex RGB colors.
+- `surface_pointcloud.ply`: Dense 3D point cloud with surface normals.
+
+---
+
+### 4. Cloud GPU Acceleration with Kaggle
+
+For cloud GPU acceleration, use our all-in-one workstation notebook: [`experiments/kaggle/leocherd_iris_gpu_inference.ipynb`](experiments/kaggle/leocherd_iris_gpu_inference.ipynb).
+
+1. Upload the notebook to [Kaggle](https://www.kaggle.com/) with **Accelerator: GPU T4 x2**.
+2. Upload your video file (or run with the built-in auto-generated sample video).
+3. Click **Run All**. The notebook will:
+   - Run **Depth Anything V2** on CUDA to extract dense 3D surface meshes (`surface_mesh.obj`).
+   - Run **MediaPipe Heavy GPU Pose Tracking** with **Aim + Pole-Vector** roll stabilization.
+   - Smooth trajectories with Savitzky-Golay biomechanical filtering.
+   - Compile Blender Armature definitions (`blender_rig_data.json`) and animation curves (`blender_anim_data.json`).
+   - Automatically bundle all assets into `leocherd_iris_export.zip` ready for single-click download!
+4. Download `leocherd_iris_export.zip` and import it locally:
 ```bash
 python main.py import-kaggle path/to/iris_kaggle_pose_data.json \
   --morphology human \
@@ -324,16 +350,30 @@ python main.py reconstruct data/samples/online_walking_sample.mp4 \
 ### 9. Production 3D Export & Engine Usage
 
 #### Importing into Blender
+
+##### Option A: 1-Click Automated Headless Blender Rigging (`bpy`)
+Automatically import your generated 3D surface mesh (`.obj`/`.ply`), create the Blender Armature with exact bone heads and rolls, bind Automatic Skin Weights (`ARMATURE_AUTO`), bake animation keyframes, and save a production `.blend` and `.fbx` file:
+
+```bash
+blender --background --python blender/automate_rig.py -- \
+  --mesh outputs/surface_reconstruction/surface_mesh.obj \
+  --rig outputs/dance_demo/reconstruction_3dc1fc6d_rig_data.json \
+  --anim outputs/dance_demo/reconstruction_3dc1fc6d_anim_data.json \
+  --output outputs/dance_demo/character_production_rigged.blend \
+  --export-fbx outputs/dance_demo/character_production_rigged.fbx
+```
+
+##### Option B: Standard glTF 2.0 Import in Blender GUI
 1. Launch Blender.
 2. Go to **File -> Import -> glTF 2.0 (.gltf/.glb)** and select your exported `.gltf` file.
-3. The mesh includes:
-   - Form-fitted anatomical proxy mesh (sculpted ribcage, deltoids, patella guards, seamless neck loft).
+3. The model loads with:
+   - Form-fitted anatomical proxy mesh (or reconstructed surface mesh).
    - Skinned armature with bone hierarchy.
    - Embedded animation action track ready for playback in the Timeline or NLA editor.
 
 To run automated headless Blender validation:
 ```bash
-blender --background --python scripts/verify_blender_rig.py -- outputs/my_walk_run/reconstruction_skinned_walking.gltf
+blender --background --python scripts/verify_blender_rig.py -- outputs/dance_demo/reconstruction_3dc1fc6d.gltf
 ```
 
 #### Importing into Unity

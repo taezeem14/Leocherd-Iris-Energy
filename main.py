@@ -173,6 +173,43 @@ def cmd_run_server(args: argparse.Namespace) -> None:
     uvicorn.run("iris.api.main:app", host=host, port=port, reload=args.reload)
 
 
+def cmd_mesh_reconstruct(args: argparse.Namespace) -> None:
+    video_path = args.video_path
+    method = args.method or "depth_anything"
+    out_dir = args.output_dir or "outputs/surface_mesh"
+    step = args.frame_interval or 15
+    max_f = args.max_frames or 10
+
+    print("=" * 65)
+    print(" LEOCHERD IRIS ENERGY - 3D SURFACE & MESH RECONSTRUCTION")
+    print("=" * 65)
+    print(f" Input Video            : {video_path}")
+    print(f" Reconstruction Method  : {method.upper()}")
+    print(f" Frame Step Interval    : {step}")
+    print(f" Max Evaluated Frames   : {max_f}")
+    print(f" Destination Directory  : {out_dir}")
+    print("-" * 65)
+
+    try:
+        if method == "sfm":
+            from iris.mesh.sfm_reconstruction import VideoStructureFromMotion
+            sfm = VideoStructureFromMotion()
+            res = sfm.process_video(video_path, out_dir, frame_step=step, max_pairs=max_f)
+        else:
+            from iris.mesh.surface_reconstruction import MonocularDepthReconstructor
+            recon = MonocularDepthReconstructor()
+            res = recon.process_video(video_path, out_dir, frame_interval=step, max_frames=max_f)
+
+        print("-" * 65)
+        print(" 3D SURFACE RECONSTRUCTION SUCCESSFUL!")
+        for k, v in res.items():
+            print(f"   [{k.upper():<18}] -> {v}")
+        print("=" * 65)
+    except Exception as e:
+        logger.error(f"3D mesh reconstruction failed: {e}")
+        sys.exit(1)
+
+
 def cmd_diagnostics(args: argparse.Namespace) -> None:
     from scripts.system_diagnostics import inspect_system, print_report
 
@@ -237,6 +274,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_server.add_argument("--port", type=int, default=8000, help="API Port")
     p_server.add_argument("--reload", action="store_true", help="Enable auto-reload")
     p_server.set_defaults(func=cmd_run_server)
+
+    # mesh-reconstruct
+    p_mesh = subparsers.add_parser("mesh-reconstruct", help="Extract 3D point cloud and surface mesh from video (Depth Anything / SfM)")
+    p_mesh.add_argument("video_path", help="Path to input video file")
+    p_mesh.add_argument(
+        "--method",
+        choices=["depth_anything", "sfm"],
+        default="depth_anything",
+        help="Reconstruction method: depth_anything (AI Depth) or sfm (Structure-from-Motion)",
+    )
+    p_mesh.add_argument("--frame-interval", type=int, default=15, help="Sampling frame interval (default: 15)")
+    p_mesh.add_argument("--max-frames", type=int, default=10, help="Maximum keyframes to extract for 3D meshing")
+    p_mesh.add_argument("--output-dir", "-o", default="outputs/surface_mesh", help="Output directory")
+    p_mesh.set_defaults(func=cmd_mesh_reconstruct)
 
     # diagnostics
     p_diag = subparsers.add_parser("diagnostics", help="Run system hardware and environment diagnostics")

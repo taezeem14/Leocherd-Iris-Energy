@@ -130,19 +130,6 @@ class Skeleton:
                     rest_vec = child_node.rest_world_pos - node.rest_world_pos
                     unit_dir = QuaternionMath.normalize_vector(rest_vec)
 
-                # Anatomical biomechanical constraints for legs:
-                # 1. Shin (knee to foot) must extend downward (-Y)
-                if "foot" in child_name.lower() and "leg" in current_joint.lower():
-                    if unit_dir[1] > -0.10:
-                        unit_dir[1] = -0.90
-                        unit_dir = QuaternionMath.normalize_vector(unit_dir)
-
-                # 2. Thigh (hips to knee) must extend downward (-Y)
-                elif "leg" in child_name.lower() and "upleg" in current_joint.lower():
-                    if unit_dir[1] > 0.10:
-                        unit_dir[1] = -0.85
-                        unit_dir = QuaternionMath.normalize_vector(unit_dir)
-
                 # Clamp child position strictly to anatomical rest length
                 child_node.world_pos = node.world_pos + unit_dir * bone.rest_length
 
@@ -373,11 +360,40 @@ class Skeleton:
         if q_world is not None:
             node.world_rotation = q_world
         elif node.children_names:
-            # Primary bone direction to first child
+            # Tri-axial aim + pole vector basis calculation to lock roll angle and prevent limb flipping
             primary_child = self.joints[node.children_names[0]]
-            rest_dir = QuaternionMath.normalize_vector(primary_child.rest_world_pos - node.rest_world_pos)
-            cur_dir = QuaternionMath.normalize_vector(primary_child.world_pos - node.world_pos)
-            node.world_rotation = QuaternionMath.rotation_between_vectors(rest_dir, cur_dir)
+            v_aim_rest = primary_child.rest_world_pos - node.rest_world_pos
+            v_aim_cur = primary_child.world_pos - node.world_pos
+
+            v_sec_rest = None
+            v_sec_cur = None
+
+            # 1. Look downstream to grandchild (e.g. Elbow -> Wrist, Knee -> Foot)
+            if primary_child.children_names:
+                grandchild = self.joints[primary_child.children_names[0]]
+                g_rest = grandchild.rest_world_pos - primary_child.rest_world_pos
+                g_cur = grandchild.world_pos - primary_child.world_pos
+                if np.linalg.norm(np.cross(v_aim_cur, g_cur)) > 1e-4 and np.linalg.norm(np.cross(v_aim_rest, g_rest)) > 1e-4:
+                    v_sec_rest = g_rest
+                    v_sec_cur = g_cur
+
+            # 2. Look upstream to parent (e.g. Shoulder -> Elbow for forearm)
+            if v_sec_rest is None and node.parent_name:
+                parent_node = self.joints[node.parent_name]
+                p_rest = node.rest_world_pos - parent_node.rest_world_pos
+                p_cur = node.world_pos - parent_node.world_pos
+                if np.linalg.norm(np.cross(v_aim_cur, p_cur)) > 1e-4 and np.linalg.norm(np.cross(v_aim_rest, p_rest)) > 1e-4:
+                    v_sec_rest = p_rest
+                    v_sec_cur = p_cur
+
+            if v_sec_rest is not None and v_sec_cur is not None:
+                b_rest = QuaternionMath.build_orthonormal_basis(v_aim_rest, v_sec_rest)
+                b_cur = QuaternionMath.build_orthonormal_basis(v_aim_cur, v_sec_cur)
+                node.world_rotation = QuaternionMath.rotation_between_bases(b_rest, b_cur)
+            else:
+                rest_dir = QuaternionMath.normalize_vector(v_aim_rest)
+                cur_dir = QuaternionMath.normalize_vector(v_aim_cur)
+                node.world_rotation = QuaternionMath.rotation_between_vectors(rest_dir, cur_dir)
         else:
             # End effector inherits parent world rotation
             if node.parent_name:
@@ -392,15 +408,15 @@ class Skeleton:
             node.local_rotation = QuaternionMath.multiply(q_parent_inv, node.world_rotation)
             node.local_pos = node.world_pos - parent_node.world_pos
 
-            # Anatomical biomechanical limits to prevent distortion/unnatural twisting:
+            # Anatomical biomechanical limits to prevent extreme inside-out collapses while allowing expressive dance:
             if name_lower == "neck":
-                node.local_rotation = QuaternionMath.clamp_rotation_angle(node.local_rotation, 0.65)  # ~37 deg max cervical excursion
+                node.local_rotation = QuaternionMath.clamp_rotation_angle(node.local_rotation, 0.85)  # ~48 deg cervical excursion
                 node.world_rotation = QuaternionMath.multiply(parent_node.world_rotation, node.local_rotation)
             elif name_lower == "head":
-                node.local_rotation = QuaternionMath.clamp_rotation_angle(node.local_rotation, 0.55)  # ~31 deg max head-on-neck
+                node.local_rotation = QuaternionMath.clamp_rotation_angle(node.local_rotation, 0.75)  # ~43 deg head-on-neck
                 node.world_rotation = QuaternionMath.multiply(parent_node.world_rotation, node.local_rotation)
             elif "spine" in name_lower:
-                node.local_rotation = QuaternionMath.clamp_rotation_angle(node.local_rotation, 0.52)  # ~30 deg spine flexion
+                node.local_rotation = QuaternionMath.clamp_rotation_angle(node.local_rotation, 0.85)  # ~48 deg spine flexion
                 node.world_rotation = QuaternionMath.multiply(parent_node.world_rotation, node.local_rotation)
         else:
             node.local_rotation = node.world_rotation.copy()
