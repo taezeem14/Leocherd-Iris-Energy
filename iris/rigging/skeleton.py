@@ -22,6 +22,11 @@ class Skeleton:
         self.root_name = root_name
         self.joints: Dict[str, JointNode] = {}
         self.bones: Dict[str, BoneEdge] = {}
+        self.symmetry_plane: Optional[Tuple[np.ndarray, float]] = None
+        self.symmetry_pairs: Dict[str, str] = {}
+        self.symmetry_bone_pairs: Dict[str, str] = {}
+        self.midline_joints: List[str] = []
+        self.midline_bones: List[str] = []
 
     @classmethod
     def from_morphology(cls, morphology: BaseMorphology) -> "Skeleton":
@@ -148,6 +153,148 @@ class Skeleton:
         # Top-down calculation
         self._compute_joint_rotation_recursive(self.root_name)
 
+    def _compute_generalized_root_orientation(self) -> Optional[np.ndarray]:
+        """
+        Computes a generalized orthonormal 3-axis basis (v_up, v_fwd, v_lat)
+        for arbitrary creature roots (horizontal quadrupeds, linear serpentines,
+        radial tentaculars, unlabelled discovered skeletons) without roll/twist ambiguity.
+        """
+        node = self.joints[self.root_name]
+        if not node.children_names:
+            return QuaternionMath.identity()
+
+        # 1. Determine primary longitudinal child
+        long_child = None
+        trunk_keywords = ["spine", "lumbar", "thoracic", "chest", "neck", "vert", "trunk", "body", "head"]
+        for c in node.children_names:
+            c_low = c.lower()
+            if any(kw in c_low for kw in trunk_keywords):
+                long_child = c
+                break
+
+        if long_child is None:
+            # Pick child with deepest subtree
+            def _get_depth(j_name: str) -> int:
+                j = self.joints[j_name]
+                if not j.children_names:
+                    return 1
+                return 1 + max(_get_depth(ch) for ch in j.children_names)
+
+            depths = {c: _get_depth(c) for c in node.children_names}
+            max_depth = max(depths.values())
+            deep_children = [c for c, d in depths.items() if d == max_depth]
+            if len(deep_children) == 1:
+                long_child = deep_children[0]
+            else:
+                # Tie-breaker: largest rest distance from root
+                long_child = max(
+                    deep_children,
+                    key=lambda c: float(np.linalg.norm(self.joints[c].rest_world_pos - node.rest_world_pos)),
+                )
+
+        child_node = self.joints[long_child]
+        v_long_rest = child_node.rest_world_pos - node.rest_world_pos
+        v_long_cur = child_node.world_pos - node.world_pos
+        if np.linalg.norm(v_long_rest) < 1e-6 or np.linalg.norm(v_long_cur) < 1e-6:
+            return None
+
+        # 2. Determine secondary lateral axis
+        v_lat_rest = None
+        v_lat_cur = None
+
+        # 2a. Check symmetry pairs among children of root
+        if hasattr(self, "symmetry_pairs") and self.symmetry_pairs:
+            for c in node.children_names:
+                partner = self.symmetry_pairs.get(c)
+                if partner in node.children_names and partner != c:
+                    if self.joints[partner].rest_world_pos[0] > self.joints[c].rest_world_pos[0]:
+                        cL, cR = c, partner
+                    else:
+                        cL, cR = partner, c
+                    v_lat_rest = self.joints[cR].rest_world_pos - self.joints[cL].rest_world_pos
+                    v_lat_cur = self.joints[cR].world_pos - self.joints[cL].world_pos
+                    break
+
+        # 2b. Check name pattern among children of root (e.g. BackLeft_Hip and BackRight_Hip)
+        if v_lat_rest is None:
+            left_candidates = [c for c in node.children_names if "left" in c.lower() or c.startswith("FL") or c.startswith("BL")]
+            right_candidates = [c for c in node.children_names if "right" in c.lower() or c.startswith("FR") or c.startswith("BR")]
+            if left_candidates and right_candidates:
+                cL, cR = left_candidates[0], right_candidates[0]
+                v_lat_rest = self.joints[cR].rest_world_pos - self.joints[cL].rest_world_pos
+                v_lat_cur = self.joints[cR].world_pos - self.joints[cL].world_pos
+
+        # 2c. Check symmetry pairs anywhere in the skeleton
+        if v_lat_rest is None and hasattr(self, "symmetry_pairs") and self.symmetry_pairs:
+            valid_pairs = []
+            for jL, jR in self.symmetry_pairs.items():
+                if jL in self.joints and jR in self.joints and jL != jR:
+                    sep = float(np.linalg.norm(self.joints[jR].rest_world_pos - self.joints[jL].rest_world_pos))
+                    valid_pairs.append((sep, jL, jR))
+            if valid_pairs:
+                valid_pairs.sort(key=lambda item: item[0], reverse=True)
+                _, jL, jR = valid_pairs[0]
+                if self.joints[jR].rest_world_pos[0] < self.joints[jL].rest_world_pos[0]:
+                    jL, jR = jR, jL
+                v_lat_rest = self.joints[jR].rest_world_pos - self.joints[jL].rest_world_pos
+                v_lat_cur = self.joints[jR].world_pos - self.joints[jL].world_pos
+
+        # 2d. Check curvature along chain (e.g. Serpentine: root -> c1 -> c2)
+        if v_lat_rest is None and child_node.children_names:
+            c2_name = child_node.children_names[0]
+            c2_node = self.joints[c2_name]
+            u1_cur = child_node.world_pos - node.world_pos
+            u2_cur = c2_node.world_pos - child_node.world_pos
+            norm_cur = np.cross(u1_cur, u2_cur)
+            if np.linalg.norm(norm_cur) > 1e-4:
+                v_lat_cur = np.cross(norm_cur, v_long_cur)
+            u1_rest = child_node.rest_world_pos - node.rest_world_pos
+            u2_rest = c2_node.rest_world_pos - child_node.rest_world_pos
+            norm_rest = np.cross(u1_rest, u2_rest)
+            if np.linalg.norm(norm_rest) > 1e-4:
+                v_lat_rest = np.cross(norm_rest, v_long_rest)
+            else:
+                v_lat_rest = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+        # 2e. Check radial children (e.g. Tentacular hub with multiple branches)
+        if v_lat_rest is None and len(node.children_names) >= 2:
+            other_children = [c for c in node.children_names if c != long_child]
+            other_node = self.joints[other_children[0]]
+            v_other_rest = other_node.rest_world_pos - node.rest_world_pos
+            v_other_cur = other_node.world_pos - node.world_pos
+            u_long_rest = v_long_rest / np.linalg.norm(v_long_rest)
+            u_long_cur = v_long_cur / np.linalg.norm(v_long_cur)
+            v_lat_rest = v_other_rest - np.dot(v_other_rest, u_long_rest) * u_long_rest
+            v_lat_cur = v_other_cur - np.dot(v_other_cur, u_long_cur) * u_long_cur
+
+        # 2f. Ultimate fallback for lateral
+        if v_lat_rest is None or np.linalg.norm(v_lat_rest) < 1e-6 or v_lat_cur is None or np.linalg.norm(v_lat_cur) < 1e-6:
+            v_lat_rest = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+            v_lat_cur = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+        # 3. Determine Upright vs Horizontal Posture
+        v_long_unit = v_long_rest / (np.linalg.norm(v_long_rest) + 1e-8)
+        is_upright = abs(float(v_long_unit[1])) > 0.7071
+
+        if is_upright:
+            y_rest = v_long_rest
+            z_rest = np.cross(v_lat_rest, y_rest)
+            b_rest = QuaternionMath.build_orthonormal_basis(y_rest, z_rest)
+
+            y_cur = v_long_cur
+            z_cur = np.cross(v_lat_cur, y_cur)
+            b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
+        else:
+            z_rest = v_long_rest
+            y_rest = np.cross(z_rest, v_lat_rest)
+            b_rest = QuaternionMath.build_orthonormal_basis(y_rest, z_rest)
+
+            z_cur = v_long_cur
+            y_cur = np.cross(z_cur, v_lat_cur)
+            b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
+
+        return QuaternionMath.rotation_between_bases(b_rest, b_cur)
+
     def _compute_joint_rotation_recursive(self, joint_name: str) -> None:
         node = self.joints[joint_name]
         q_world = None
@@ -168,6 +315,9 @@ class Skeleton:
             z_cur = np.cross(lat_cur, y_cur)
             b_cur = QuaternionMath.build_orthonormal_basis(y_cur, z_cur)
             q_world = QuaternionMath.rotation_between_bases(b_rest, b_cur)
+
+        elif joint_name == self.root_name:
+            q_world = self._compute_generalized_root_orientation()
 
         elif name_lower == "chest" and "Neck" in self.joints and "LeftShoulder" in self.joints and "RightShoulder" in self.joints:
             p_neck = self.joints["Neck"]

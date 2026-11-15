@@ -43,8 +43,11 @@ class BlenderExporter(BaseAssetExporter):
         logger.info(f"Serializing Blender JSON definitions to {out_dir}...")
 
         # 1. Save rig JSON
+        rig_dict = skeleton.to_dict()
+        rig_dict["use_deform_preserve_volume"] = kwargs.get("preserve_volume", True)
+        rig_dict["skinning_method"] = kwargs.get("skinning_method", "dqs")
         with open(rig_json_path, "w", encoding="utf-8") as f:
-            json.dump(skeleton.to_dict(), f, indent=2)
+            json.dump(rig_dict, f, indent=2)
 
         # 2. Save animation JSON
         anim_dict = {

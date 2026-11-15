@@ -40,10 +40,33 @@ class MotionProcessingStage(PipelineStage):
 
         logger.info(f"Reconstructing motion across {T} frames for {len(all_joint_names)} joints...")
 
-        morphology_name = context.morphology_name or "human"
-        from iris.morphology import MorphologyRegistry
-        morphology = context.morphology or MorphologyRegistry.get(morphology_name)
-        relaxed_dict = morphology.relaxed_pose if hasattr(morphology, "relaxed_pose") else morphology.rest_pose
+        morphology_name = (context.morphology_name or "human").lower()
+        if morphology_name in ("discover", "unsupervised"):
+            morphology = None
+            relaxed_dict = {}
+        elif morphology_name == "auto":
+            if context.morphology is not None:
+                morphology = context.morphology
+                relaxed_dict = morphology.relaxed_pose if hasattr(morphology, "relaxed_pose") else morphology.rest_pose
+            elif context.morphology_prediction is not None:
+                from iris.morphology import MorphologyRegistry
+                inferred = context.morphology_prediction.predicted_type.value
+                morphology = MorphologyRegistry.get(inferred)
+                context.morphology = morphology
+                relaxed_dict = morphology.relaxed_pose if hasattr(morphology, "relaxed_pose") else morphology.rest_pose
+            else:
+                from iris.morphology.classifier import MorphologyClassifier
+                from iris.morphology import MorphologyRegistry
+                pred = MorphologyClassifier().classify_from_poses(poses)
+                context.morphology_prediction = pred
+                inferred = pred.predicted_type.value
+                morphology = MorphologyRegistry.get(inferred)
+                context.morphology = morphology
+                relaxed_dict = morphology.relaxed_pose if hasattr(morphology, "relaxed_pose") else morphology.rest_pose
+        else:
+            from iris.morphology import MorphologyRegistry
+            morphology = context.morphology or MorphologyRegistry.get(morphology_name)
+            relaxed_dict = morphology.relaxed_pose if hasattr(morphology, "relaxed_pose") else morphology.rest_pose
 
         trajectories: Dict[str, JointTrajectory] = {}
 

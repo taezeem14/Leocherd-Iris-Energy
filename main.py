@@ -17,6 +17,7 @@ from iris.export import AssetExportStage
 from iris.motion.reconstruction import MotionProcessingStage
 from iris.pose.estimator import PoseEstimationStage
 from iris.retargeting.animation import AnimationGenerationStage
+from iris.retargeting.retargeter import RetargetingStage
 from iris.rigging.topology import SkeletonReconstructionStage
 from iris.video.ingestion import VideoIngestionService, VideoIngestionStage
 
@@ -57,6 +58,8 @@ def cmd_reconstruct(args: argparse.Namespace) -> None:
     target_fps = args.fps or 15
     out_dir = args.output_dir or "outputs"
     formats = [f.strip() for f in args.formats.split(",") if f.strip()]
+    skinning_method = getattr(args, "skinning_method", "heat_diffusion")
+    retarget_to = getattr(args, "retarget_to", None)
 
     max_frames = args.max_frames
 
@@ -65,6 +68,9 @@ def cmd_reconstruct(args: argparse.Namespace) -> None:
     print("=" * 65)
     print(f" Input Video            : {video_path}")
     print(f" Creature Morphology    : {morphology}")
+    if retarget_to:
+        print(f" Retargeting Target     : {retarget_to}")
+    print(f" Skinning Method        : {skinning_method}")
     print(f" Processing Rate        : {target_fps} FPS")
     print(f" Max Frames             : {max_frames if max_frames else 'All'}")
     print(f" Target Exports         : {', '.join(formats).upper()}")
@@ -80,6 +86,8 @@ def cmd_reconstruct(args: argparse.Namespace) -> None:
         output_dir=out_dir,
         morphology_name=morphology,
         target_fps=target_fps,
+        skinning_method=skinning_method,
+        retarget_to=retarget_to,
         config_overrides=overrides,
     )
 
@@ -89,6 +97,7 @@ def cmd_reconstruct(args: argparse.Namespace) -> None:
     pipeline.add_stage(MotionProcessingStage())
     pipeline.add_stage(SkeletonReconstructionStage())
     pipeline.add_stage(AnimationGenerationStage())
+    pipeline.add_stage(RetargetingStage())
     pipeline.add_stage(AssetExportStage(formats=formats))
 
     try:
@@ -171,7 +180,7 @@ def cmd_diagnostics(args: argparse.Namespace) -> None:
     print_report(profile)
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="iris",
         description="Leocherd Iris Energy - Python-First Universal AI Video-to-3D Rigging Engine",
@@ -186,17 +195,38 @@ def main() -> None:
     # reconstruct
     p_recon = subparsers.add_parser("reconstruct", help="Run end-to-end 3D rigging and reconstruction")
     p_recon.add_argument("video_path", help="Path to input video file")
-    p_recon.add_argument("--morphology", "-m", default="human", help="Creature morphology (human, quadruped, etc.)")
+    p_recon.add_argument(
+        "--morphology",
+        "-m",
+        default="human",
+        help="Creature morphology: human, quadruped, avian, serpentine, tentacular, auto, discover (default: human)",
+    )
     p_recon.add_argument("--fps", type=int, default=15, help="Sampling frame rate (default: 15)")
     p_recon.add_argument("--max-frames", type=int, default=None, help="Maximum number of frames to extract and process")
     p_recon.add_argument("--output-dir", "-o", default="outputs", help="Output directory")
     p_recon.add_argument("--formats", default="gltf,bvh,blender", help="Comma-separated export formats")
+    p_recon.add_argument(
+        "--skinning-method",
+        choices=["heat_diffusion", "volumetric", "geodesic", "lbs"],
+        default="heat_diffusion",
+        help="Skin weighting method: heat_diffusion, volumetric, geodesic, lbs (default: heat_diffusion)",
+    )
+    p_recon.add_argument(
+        "--retarget-to",
+        default=None,
+        help="Cross-morphology retargeting target: human, quadruped, avian, serpentine, tentacular (default: None)",
+    )
     p_recon.set_defaults(func=cmd_reconstruct)
 
     # import-kaggle
     p_kaggle = subparsers.add_parser("import-kaggle", help="Generate 3D rigs and animation from Kaggle GPU exported JSON")
     p_kaggle.add_argument("json_path", help="Path to Kaggle exported iris_kaggle_pose_data.json")
-    p_kaggle.add_argument("--morphology", "-m", default="human", help="Creature morphology (human, quadruped, etc.)")
+    p_kaggle.add_argument(
+        "--morphology",
+        "-m",
+        default="human",
+        help="Creature morphology: human, quadruped, avian, serpentine, tentacular, auto, discover (default: human)",
+    )
     p_kaggle.add_argument("--output-dir", "-o", default="outputs/kaggle_export", help="Output directory")
     p_kaggle.add_argument("--formats", default="gltf,bvh,blender", help="Comma-separated export formats")
     p_kaggle.set_defaults(func=cmd_import_kaggle)
@@ -212,6 +242,11 @@ def main() -> None:
     p_diag = subparsers.add_parser("diagnostics", help="Run system hardware and environment diagnostics")
     p_diag.set_defaults(func=cmd_diagnostics)
 
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
     if hasattr(args, "func"):
         args.func(args)

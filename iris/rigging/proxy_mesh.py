@@ -574,6 +574,360 @@ class ProxyMeshGenerator:
         )
 
     @classmethod
+    def generate_capsule_segment(
+        cls,
+        p_start: np.ndarray,
+        p_end: np.ndarray,
+        radius_start: float,
+        radius_end: float,
+        j_parent: int,
+        j_child: int,
+        slices: int = 12,
+        rings: int = 6,
+        cap_rings: int = 3,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Constructs a watertight topological 2-sphere capsule segment around bone vector
+        (parent rest pos to child rest pos) with radial cylinder quads and hemispherical
+        end caps (Euler characteristic chi = 2).
+        Computes smooth cubic Hermite skin weights s(t) = 3t^2 - 2t^3 blending between
+        parent and child joint indices.
+        Returns:
+            verts: (V, 3) float32
+            norms: (V, 3) float32
+            faces: (F, 3) uint32
+            joint_indices: (V, 4) uint16
+            joint_weights: (V, 4) float32
+        """
+        vec = (p_end - p_start).astype(np.float32)
+        length = float(np.linalg.norm(vec))
+        if length < 1e-5:
+            d = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+            length = 0.05
+            vec = d * length
+        else:
+            d = (vec / length).astype(np.float32)
+
+        u, v_ortho = cls._create_orthogonal_basis(d)
+
+        verts: List[List[float]] = []
+        norms: List[List[float]] = []
+        j_idx: List[List[int]] = []
+        j_w: List[List[float]] = []
+        faces: List[List[int]] = []
+
+        # 1. South Pole vertex (around parent joint, pointing along -d)
+        p_south = p_start - radius_start * d
+        n_south = -d
+        verts.append([float(p_south[0]), float(p_south[1]), float(p_south[2])])
+        norms.append([float(n_south[0]), float(n_south[1]), float(n_south[2])])
+        j_idx.append([j_parent, 0, 0, 0])
+        j_w.append([1.0, 0.0, 0.0, 0.0])
+
+        # 2. Bottom hemispherical cap latitude rings
+        for k in range(1, cap_rings):
+            phi = (math.pi / 2.0) * (float(k) / float(cap_rings))
+            c = p_start - (math.cos(phi) * radius_start) * d
+            r_k = math.sin(phi) * radius_start
+            for s in range(slices):
+                theta = (2.0 * math.pi * float(s)) / float(slices)
+                radial = math.cos(theta) * u + math.sin(theta) * v_ortho
+                pt = c + r_k * radial
+                nrm = (pt - p_start) / radius_start
+                nrm_len = float(np.linalg.norm(nrm))
+                if nrm_len > 1e-6:
+                    nrm = nrm / nrm_len
+                verts.append([float(pt[0]), float(pt[1]), float(pt[2])])
+                norms.append([float(nrm[0]), float(nrm[1]), float(nrm[2])])
+                j_idx.append([j_parent, 0, 0, 0])
+                j_w.append([1.0, 0.0, 0.0, 0.0])
+
+        # 3. Cylindrical trunk body rings
+        for r_0 in range(rings):
+            t = float(r_0) / float(rings - 1) if rings > 1 else 0.5
+            c = p_start + t * vec
+            r_t = (1.0 - t) * radius_start + t * radius_end
+            s_t = 3.0 * (t ** 2) - 2.0 * (t ** 3)
+            wp = float(1.0 - s_t)
+            wc = float(s_t)
+            for s in range(slices):
+                theta = (2.0 * math.pi * float(s)) / float(slices)
+                radial = math.cos(theta) * u + math.sin(theta) * v_ortho
+                pt = c + r_t * radial
+                nrm = radial / (np.linalg.norm(radial) + 1e-8)
+                verts.append([float(pt[0]), float(pt[1]), float(pt[2])])
+                norms.append([float(nrm[0]), float(nrm[1]), float(nrm[2])])
+                j_idx.append([j_parent, j_child, 0, 0])
+                j_w.append([wp, wc, 0.0, 0.0])
+
+        # 4. Top hemispherical cap latitude rings
+        for k in range(1, cap_rings):
+            phi = (math.pi / 2.0) * (float(cap_rings - k) / float(cap_rings))
+            c = p_end + (math.cos(phi) * radius_end) * d
+            r_k = math.sin(phi) * radius_end
+            for s in range(slices):
+                theta = (2.0 * math.pi * float(s)) / float(slices)
+                radial = math.cos(theta) * u + math.sin(theta) * v_ortho
+                pt = c + r_k * radial
+                nrm = (pt - p_end) / radius_end
+                nrm_len = float(np.linalg.norm(nrm))
+                if nrm_len > 1e-6:
+                    nrm = nrm / nrm_len
+                verts.append([float(pt[0]), float(pt[1]), float(pt[2])])
+                norms.append([float(nrm[0]), float(nrm[1]), float(nrm[2])])
+                j_idx.append([j_child, 0, 0, 0])
+                j_w.append([1.0, 0.0, 0.0, 0.0])
+
+        # 5. North Pole vertex (around child joint, pointing along +d)
+        p_north = p_end + radius_end * d
+        n_north = d
+        north_idx = len(verts)
+        verts.append([float(p_north[0]), float(p_north[1]), float(p_north[2])])
+        norms.append([float(n_north[0]), float(n_north[1]), float(n_north[2])])
+        j_idx.append([j_child, 0, 0, 0])
+        j_w.append([1.0, 0.0, 0.0, 0.0])
+
+        # Total intermediate rings
+        total_rings = (cap_rings - 1) + rings + (cap_rings - 1)
+
+        # South pole fan
+        for s in range(slices):
+            s_next = (s + 1) % slices
+            faces.append([0, 1 + s_next, 1 + s])
+
+        # Quads between adjacent rings
+        for m in range(total_rings - 1):
+            b0 = 1 + m * slices
+            b1 = 1 + (m + 1) * slices
+            for s in range(slices):
+                s_next = (s + 1) % slices
+                v00 = b0 + s
+                v01 = b0 + s_next
+                v10 = b1 + s
+                v11 = b1 + s_next
+                faces.append([v00, v01, v11])
+                faces.append([v00, v11, v10])
+
+        # North pole fan
+        b_last = 1 + (total_rings - 1) * slices
+        for s in range(slices):
+            s_next = (s + 1) % slices
+            faces.append([b_last + s, b_last + s_next, north_idx])
+
+        return (
+            np.array(verts, dtype=np.float32),
+            np.array(norms, dtype=np.float32),
+            np.array(faces, dtype=np.uint32),
+            np.array(j_idx, dtype=np.uint16),
+            np.array(j_w, dtype=np.float32),
+        )
+
+    @classmethod
+    def _generate_uv_sphere(
+        cls,
+        center: np.ndarray,
+        radius: float = 0.05,
+        lat_segments: int = 8,
+        lon_segments: int = 12,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Generates a closed, watertight UV sphere centered at center."""
+        verts: List[List[float]] = []
+        norms: List[List[float]] = []
+        faces: List[List[int]] = []
+
+        # South pole
+        verts.append([float(center[0]), float(center[1] - radius), float(center[2])])
+        norms.append([0.0, -1.0, 0.0])
+
+        # Intermediate rings
+        for i in range(1, lat_segments):
+            theta = math.pi * (1.0 - float(i) / float(lat_segments))
+            y = -radius * math.cos(theta)
+            r = radius * math.sin(theta)
+            for j in range(lon_segments):
+                phi = 2.0 * math.pi * float(j) / float(lon_segments)
+                x = r * math.cos(phi)
+                z = r * math.sin(phi)
+                pt = [float(center[0] + x), float(center[1] + y), float(center[2] + z)]
+                nrm = [x / radius, y / radius, z / radius]
+                verts.append(pt)
+                norms.append(nrm)
+
+        # North pole
+        north_idx = len(verts)
+        verts.append([float(center[0]), float(center[1] + radius), float(center[2])])
+        norms.append([0.0, 1.0, 0.0])
+
+        # South pole fan
+        for j in range(lon_segments):
+            next_j = (j + 1) % lon_segments
+            faces.append([0, 1 + next_j, 1 + j])
+
+        # Intermediate quads
+        for i in range(lat_segments - 2):
+            b0 = 1 + i * lon_segments
+            b1 = 1 + (i + 1) * lon_segments
+            for j in range(lon_segments):
+                next_j = (j + 1) % lon_segments
+                faces.append([b0 + j, b0 + next_j, b1 + next_j])
+                faces.append([b0 + j, b1 + next_j, b1 + j])
+
+        # North pole fan
+        b_last = 1 + (lat_segments - 2) * lon_segments
+        for j in range(lon_segments):
+            next_j = (j + 1) % lon_segments
+            faces.append([b_last + j, b_last + next_j, north_idx])
+
+        return (
+            np.array(verts, dtype=np.float32),
+            np.array(norms, dtype=np.float32),
+            np.array(faces, dtype=np.uint32),
+        )
+
+    @classmethod
+    def _generate_procedural_mesh_components(
+        cls,
+        skeleton: Skeleton,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Internal procedural mesh generator producing vertices, normals, faces,
+        joint_indices, and sanitized joint_weights.
+        """
+        joint_names = list(skeleton.joints.keys())
+        joint_to_idx = {name: i for i, name in enumerate(joint_names)}
+
+        all_verts: List[np.ndarray] = []
+        all_norms: List[np.ndarray] = []
+        all_indices: List[np.ndarray] = []
+        all_joint_indices: List[np.ndarray] = []
+        all_joint_weights: List[np.ndarray] = []
+        vertex_offset = 0
+
+        def append_part(v: np.ndarray, n: np.ndarray, idx: np.ndarray, ji: np.ndarray, jw: np.ndarray) -> None:
+            nonlocal vertex_offset
+            if len(v) == 0:
+                return
+            all_verts.append(v)
+            all_norms.append(n)
+            all_indices.append(idx + vertex_offset)
+            all_joint_indices.append(ji)
+            all_joint_weights.append(jw)
+            vertex_offset += len(v)
+
+        if len(skeleton.bones) == 0:
+            # Fallback for single-joint skeleton
+            root_pos = (
+                skeleton.joints[skeleton.root_name].rest_world_pos
+                if skeleton.root_name in skeleton.joints
+                else np.zeros(3, dtype=np.float32)
+            )
+            root_idx = joint_to_idx.get(skeleton.root_name, 0)
+            v, n, idx = cls._generate_uv_sphere(root_pos, radius=0.05, lat_segments=8, lon_segments=12)
+            ji = np.zeros((len(v), 4), dtype=np.uint16)
+            jw = np.zeros((len(v), 4), dtype=np.float32)
+            ji[:, 0] = root_idx
+            jw[:, 0] = 1.0
+            append_part(v, n, idx, ji, jw)
+        else:
+            for b_name, bone in skeleton.bones.items():
+                p_joint = skeleton.joints[bone.parent_joint]
+                c_joint = skeleton.joints[bone.child_joint]
+                p_start = p_joint.rest_world_pos
+                p_end = c_joint.rest_world_pos
+                j_parent = joint_to_idx[bone.parent_joint]
+                j_child = joint_to_idx[bone.child_joint]
+
+                vec = p_end - p_start
+                length = float(np.linalg.norm(vec))
+                if length < 1e-4:
+                    length = max(float(bone.rest_length), 0.05)
+
+                radius = float(np.clip(0.15 * length, 0.02, 0.08))
+                radius_start = radius
+                radius_end = 0.85 * radius
+
+                v, n, idx, ji, jw = cls.generate_capsule_segment(
+                    p_start=p_start,
+                    p_end=p_end,
+                    radius_start=radius_start,
+                    radius_end=radius_end,
+                    j_parent=j_parent,
+                    j_child=j_child,
+                    slices=12,
+                    rings=6,
+                    cap_rings=3,
+                )
+                append_part(v, n, idx, ji, jw)
+
+        if not all_verts:
+            return (
+                np.zeros((0, 3), dtype=np.float32),
+                np.zeros((0, 3), dtype=np.float32),
+                np.zeros((0, 3), dtype=np.uint32),
+                np.zeros((0, 4), dtype=np.uint16),
+                np.zeros((0, 4), dtype=np.float32),
+            )
+
+        final_verts = np.vstack(all_verts)
+        final_norms = np.vstack(all_norms)
+        final_indices = np.vstack(all_indices)
+        raw_joint_indices = np.vstack(all_joint_indices)
+        raw_joint_weights = np.vstack(all_joint_weights)
+
+        # Sanitize joint weights and indices (glTF 2.0 conformance):
+        V = len(raw_joint_weights)
+        clean_joint_indices = np.zeros((V, 4), dtype=np.uint16)
+        clean_joint_weights = np.zeros((V, 4), dtype=np.float32)
+
+        for v_idx in range(V):
+            joint_map: Dict[int, float] = {}
+            for k in range(4):
+                w = float(raw_joint_weights[v_idx, k])
+                j = int(raw_joint_indices[v_idx, k])
+                if w > 1e-5:
+                    joint_map[j] = joint_map.get(j, 0.0) + w
+
+            sorted_pairs = sorted(joint_map.items(), key=lambda p: p[1], reverse=True)
+            total_w = sum(p[1] for p in sorted_pairs[:4])
+            if total_w < 1e-6:
+                clean_joint_weights[v_idx, 0] = 1.0
+                clean_joint_indices[v_idx, 0] = 0
+            else:
+                for k, (j, w) in enumerate(sorted_pairs[:4]):
+                    clean_joint_weights[v_idx, k] = float(w / total_w)
+                    clean_joint_indices[v_idx, k] = int(j)
+
+        return (
+            final_verts.astype(np.float32),
+            final_norms.astype(np.float32),
+            final_indices.astype(np.uint32),
+            clean_joint_indices,
+            clean_joint_weights,
+        )
+
+    @classmethod
+    def create_procedural_mesh(
+        cls,
+        skeleton: Skeleton,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Universal procedural proxy mesh generator constructing watertight 3D capsule
+        segments around all BoneEdge objects in any Skeleton instance.
+        Returns:
+            vertices: (V, 3) float32
+            faces: (F, 3) int32
+            weights: (V, 4) float32
+            joint_indices: (V, 4) uint16
+        """
+        verts, norms, faces, j_indices, weights = cls._generate_procedural_mesh_components(skeleton)
+        return (
+            verts.astype(np.float32),
+            faces.astype(np.int32),
+            weights.astype(np.float32),
+            j_indices.astype(np.uint16),
+        )
+
+    @classmethod
     def create_skinned_mannequin(
         cls,
         skeleton: Skeleton,
@@ -590,6 +944,12 @@ class ProxyMeshGenerator:
         """
         joint_names = list(skeleton.joints.keys())
         joint_to_idx = {name: i for i, name in enumerate(joint_names)}
+
+        # Strict check: Does this skeleton satisfy full humanoid morphology?
+        humanoid_required = ["Hips", "Spine", "Chest", "Neck", "Head"]
+        if not all(k in joint_to_idx for k in humanoid_required):
+            v, n, f, ji, jw = cls._generate_procedural_mesh_components(skeleton)
+            return (v, n, f.astype(np.uint16), ji, jw)
 
         all_verts: List[np.ndarray] = []
         all_norms: List[np.ndarray] = []
@@ -640,7 +1000,7 @@ class ProxyMeshGenerator:
             append_part(v, n, idx, ji, jw)
 
         # 3. Sculpted Neck Column (Seamlessly connects Trapezius collar to Jaw/Skull base)
-        if "Neck" in joint_to_idx and "Head" in joint_to_idx:
+        if "Neck" in joint_to_idx and "Head" in joint_to_idx and "Chest" in joint_to_idx:
             p_chest = get_pos("Chest")
             p_neck = get_pos("Neck")
             p_head = get_pos("Head")
@@ -791,13 +1151,8 @@ class ProxyMeshGenerator:
                     append_part(v, n, idx, ji, jw)
 
         if not all_verts:
-            return (
-                np.zeros((0, 3), dtype=np.float32),
-                np.zeros((0, 3), dtype=np.float32),
-                np.zeros((0, 3), dtype=np.uint16),
-                np.zeros((0, 4), dtype=np.uint16),
-                np.zeros((0, 4), dtype=np.float32),
-            )
+            v, n, f, ji, jw = cls._generate_procedural_mesh_components(skeleton)
+            return (v, n, f.astype(np.uint16), ji, jw)
 
         final_verts = np.vstack(all_verts)
         final_norms = np.vstack(all_norms)

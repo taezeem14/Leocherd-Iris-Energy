@@ -35,6 +35,8 @@ class ExecutionContext:
     output_dir: Optional[str] = None
     morphology_name: str = "human"
     target_fps: int = 15
+    skinning_method: str = "heat_diffusion"
+    retarget_to: Optional[str] = None
     config_overrides: Dict[str, Any] = field(default_factory=dict)
 
     # Intermediate stage artifacts

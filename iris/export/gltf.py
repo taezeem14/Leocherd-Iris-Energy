@@ -54,10 +54,32 @@ class GltfExporter(BaseAssetExporter):
             else:
                 t_local = node.rest_world_pos
 
+            # Determine rest pose rotation [x, y, z, w] for glTF
+            if hasattr(node, "local_rotation") and node.local_rotation is not None and not np.allclose(node.local_rotation, [1.0, 0.0, 0.0, 0.0]):
+                lw, lx, ly, lz = QuaternionMath.normalize_quat(node.local_rotation)
+                r_local = [float(lx), float(ly), float(lz), float(lw)]
+            elif node.parent_name is not None and hasattr(node, "world_rotation") and node.world_rotation is not None:
+                parent_node = skeleton.joints[node.parent_name]
+                if hasattr(parent_node, "world_rotation") and parent_node.world_rotation is not None:
+                    q_loc = QuaternionMath.multiply(QuaternionMath.conjugate(parent_node.world_rotation), node.world_rotation)
+                    qw, qx, qy, qz = QuaternionMath.normalize_quat(q_loc)
+                    r_local = [float(qx), float(qy), float(qz), float(qw)]
+                else:
+                    qw, qx, qy, qz = QuaternionMath.normalize_quat(node.world_rotation)
+                    r_local = [float(qx), float(qy), float(qz), float(qw)]
+            elif node.parent_name is None and hasattr(node, "world_rotation") and node.world_rotation is not None:
+                qw, qx, qy, qz = QuaternionMath.normalize_quat(node.world_rotation)
+                r_local = [float(qx), float(qy), float(qz), float(qw)]
+            elif hasattr(node, "local_rotation") and node.local_rotation is not None:
+                lw, lx, ly, lz = QuaternionMath.normalize_quat(node.local_rotation)
+                r_local = [float(lx), float(ly), float(lz), float(lw)]
+            else:
+                r_local = [0.0, 0.0, 0.0, 1.0]
+
             gltf_node: Dict[str, Any] = {
                 "name": j_name,
                 "translation": [float(t_local[0]), float(t_local[1]), float(t_local[2])],
-                "rotation": [0.0, 0.0, 0.0, 1.0],  # Canonical bind pose has identity rotation [x, y, z, w]
+                "rotation": r_local,
             }
             if children_indices:
                 gltf_node["children"] = children_indices
@@ -188,16 +210,20 @@ class GltfExporter(BaseAssetExporter):
                 })
 
         # 2d. Inverse Bind Matrices for skinning
-        # For each joint, compute 4x4 inverse bind matrix: translation(-rest_pos)
+        # For each joint, compute full 4x4 rest world affine transform M_j = [R | T],
+        # compute true inverse M_inv = np.linalg.inv(M), and serialize in column-major order (M_inv.T).
         ibm_data = np.zeros((len(joint_names), 4, 4), dtype=np.float32)
         for j_idx, j_name in enumerate(joint_names):
             node = skeleton.joints[j_name]
-            # Column-major identity with negated translation in 4th column
             mat = np.eye(4, dtype=np.float32)
-            mat[3, 0] = -node.rest_world_pos[0]
-            mat[3, 1] = -node.rest_world_pos[1]
-            mat[3, 2] = -node.rest_world_pos[2]
-            ibm_data[j_idx] = mat
+            if hasattr(node, "world_rotation") and node.world_rotation is not None:
+                mat[:3, :3] = QuaternionMath.quat_to_matrix(node.world_rotation)
+            mat[:3, 3] = node.rest_world_pos
+            try:
+                m_inv = np.linalg.inv(mat)
+            except np.linalg.LinAlgError:
+                m_inv = np.eye(4, dtype=np.float32)
+            ibm_data[j_idx] = m_inv.T
 
         ibm_bytes = ibm_data.tobytes()
         ibm_acc_idx = add_buffer_data(
@@ -207,10 +233,76 @@ class GltfExporter(BaseAssetExporter):
             count=len(joint_names),
         )
 
-        # 3. Generate Skinned 3D Proxy Mannequin Geometry
-        from iris.rigging.proxy_mesh import ProxyMeshGenerator
+        # 3. Generate or Load Skinned 3D Mesh Geometry
+        custom_mesh = kwargs.get("mesh", None)
+        if custom_mesh is not None:
+            if isinstance(custom_mesh, (tuple, list)):
+                if len(custom_mesh) == 5:
+                    verts, norms, tri_indices, j_indices, j_weights = custom_mesh
+                elif len(custom_mesh) == 4:
+                    verts, tri_indices, arr3, arr4 = custom_mesh
+                    if np.issubdtype(np.asarray(arr3).dtype, np.floating) and np.issubdtype(np.asarray(arr4).dtype, np.integer):
+                        j_weights, j_indices = arr3, arr4
+                    elif np.issubdtype(np.asarray(arr4).dtype, np.floating) and np.issubdtype(np.asarray(arr3).dtype, np.integer):
+                        j_indices, j_weights = arr3, arr4
+                    else:
+                        j_weights, j_indices = arr3, arr4
+                    norms = None
+                else:
+                    raise ExportError(f"Unsupported mesh tuple length: {len(custom_mesh)}")
+            elif isinstance(custom_mesh, dict):
+                verts = custom_mesh.get("vertices", custom_mesh.get("verts"))
+                tri_indices = custom_mesh.get("faces", custom_mesh.get("indices", custom_mesh.get("tri_indices")))
+                norms = custom_mesh.get("normals", custom_mesh.get("norms", None))
+                j_weights = custom_mesh.get("weights", custom_mesh.get("j_weights"))
+                j_indices = custom_mesh.get("joint_indices", custom_mesh.get("j_indices", custom_mesh.get("joints")))
+            else:
+                verts = getattr(custom_mesh, "vertices", getattr(custom_mesh, "verts", None))
+                tri_indices = getattr(custom_mesh, "faces", getattr(custom_mesh, "indices", None))
+                norms = getattr(custom_mesh, "normals", getattr(custom_mesh, "norms", None))
+                j_weights = getattr(custom_mesh, "weights", getattr(custom_mesh, "j_weights", None))
+                j_indices = getattr(custom_mesh, "joint_indices", getattr(custom_mesh, "j_indices", None))
 
-        verts, norms, tri_indices, j_indices, j_weights = ProxyMeshGenerator.create_skinned_mannequin(skeleton)
+            verts = np.asarray(verts, dtype=np.float32)
+            tri_indices = np.asarray(tri_indices)
+            j_indices = np.asarray(j_indices, dtype=np.uint16)
+            j_weights = np.asarray(j_weights, dtype=np.float32)
+
+            if norms is None or len(norms) == 0:
+                norms = np.zeros_like(verts, dtype=np.float32)
+                v0 = verts[tri_indices[:, 0]]
+                v1 = verts[tri_indices[:, 1]]
+                v2 = verts[tri_indices[:, 2]]
+                fn = np.cross(v1 - v0, v2 - v0)
+                for i in range(3):
+                    np.add.at(norms, tri_indices[:, i], fn)
+                lens = np.linalg.norm(norms, axis=1, keepdims=True)
+                lens[lens < 1e-8] = 1.0
+                norms = (norms / lens).astype(np.float32)
+            else:
+                norms = np.asarray(norms, dtype=np.float32)
+
+            # Sanitize weights and indices for strict glTF conformance
+            w_sums = np.sum(j_weights, axis=1, keepdims=True)
+            w_sums[w_sums < 1e-6] = 1.0
+            j_weights = j_weights / w_sums
+            zero_mask = j_weights <= 1e-6
+            j_weights[zero_mask] = 0.0
+            j_indices[zero_mask] = 0
+        else:
+            from iris.rigging.proxy_mesh import ProxyMeshGenerator
+            verts, norms, tri_indices, j_indices, j_weights = ProxyMeshGenerator.create_skinned_mannequin(skeleton)
+
+        # Eliminate any zero-area or degenerate faces (area < 1e-7)
+        if len(tri_indices) > 0 and len(verts) > 0:
+            v0 = verts[tri_indices[:, 0]]
+            v1 = verts[tri_indices[:, 1]]
+            v2 = verts[tri_indices[:, 2]]
+            cross = np.cross(v1 - v0, v2 - v0)
+            areas = 0.5 * np.linalg.norm(cross, axis=1)
+            valid_mask = areas >= 1e-7
+            if not np.all(valid_mask):
+                tri_indices = tri_indices[valid_mask]
 
         # 3a. Add Mesh Vertex Attributes to Buffer
         min_pos = [float(np.min(verts[:, d])) for d in range(3)]
@@ -245,10 +337,13 @@ class GltfExporter(BaseAssetExporter):
             count=len(j_weights),
             target=34962,
         )
-        flat_indices = tri_indices.flatten().astype(np.uint16)
+        is_uint32_indices = np.max(tri_indices) >= 65536
+        idx_dtype = np.uint32 if is_uint32_indices else np.uint16
+        idx_comp_type = 5125 if is_uint32_indices else 5123
+        flat_indices = tri_indices.flatten().astype(idx_dtype)
         indices_acc_idx = add_buffer_data(
             flat_indices.tobytes(),
-            component_type=5123,  # UNSIGNED_SHORT
+            component_type=idx_comp_type,
             type_str="SCALAR",
             count=len(flat_indices),
             min_vals=[int(np.min(flat_indices))],

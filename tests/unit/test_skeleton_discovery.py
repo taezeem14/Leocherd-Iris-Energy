@@ -14,6 +14,7 @@ from iris.rigging.orientation import QuaternionMath
 from iris.rigging.skeleton import Skeleton
 from iris.rigging.skeleton_discovery import (
     AutomaticSkeletonDiscovery,
+    DiscoveredSkeleton,
     discover_from_pose_sequence,
 )
 
@@ -418,3 +419,191 @@ def test_error_handling():
     # Invalid array dimensions
     with pytest.raises(SkeletonError, match="Expected trajectory array"):
         engine.discover(np.zeros((10, 3, 3, 3)))
+
+
+def test_symmetry_plane_detection_human():
+    from iris.morphology.human import HumanMorphology
+    human = HumanMorphology()
+    T = 20
+    np.random.seed(42)
+    t = np.linspace(0, 1.0, T)
+    coords = np.zeros((T, len(human.joints), 3), dtype=np.float32)
+    names = list(human.joints)
+    for i, j_name in enumerate(names):
+        pos = human.rest_pose[j_name]
+        coords[:, i, :] = pos
+        coords[:, i, 1] += 0.02 * np.sin(2 * np.pi * t)
+
+    discovery = AutomaticSkeletonDiscovery()
+    skel = discovery.discover(coords, names, creature_name="human_discovered")
+
+    normal, offset = skel.symmetry_plane
+    assert abs(normal[0]) > 0.98, f"Plane normal should be lateral [+1, 0, 0], got {normal}"
+    assert abs(offset) < 0.05
+    assert set(skel.midline_joints) >= {"Hips", "Spine", "Chest", "Neck", "Head"}
+    assert skel.symmetry_pairs.get("LeftArm") == "RightArm"
+    assert skel.symmetry_pairs.get("LeftUpLeg") == "RightUpLeg"
+    assert ("Bone_Hips_Spine" in skel.midline_bones or "Bone_Spine_Hips" in skel.midline_bones)
+    assert skel.symmetry_bone_pairs.get("Bone_LeftArm_LeftForeArm") == "Bone_RightArm_RightForeArm"
+
+
+def test_symmetry_plane_arbitrary_orientation_invariance():
+    from iris.morphology.human import HumanMorphology
+    human = HumanMorphology()
+    T = 20
+    t = np.linspace(0, 1.0, T)
+    names = list(human.joints)
+    coords = np.zeros((T, len(names), 3), dtype=np.float32)
+    for i, j_name in enumerate(names):
+        coords[:, i, :] = human.rest_pose[j_name]
+        coords[:, i, 1] += 0.02 * np.sin(2 * np.pi * t)
+
+    def rot_x(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[1, 0, 0], [0, c, -s], [0, s, c]], dtype=np.float32)
+
+    def rot_y(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]], dtype=np.float32)
+
+    def rot_z(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float32)
+
+    R = rot_z(np.radians(35)) @ rot_y(np.radians(50)) @ rot_x(np.radians(20))
+    trans = np.array([2.5, -1.0, 4.0], dtype=np.float32)
+
+    rot_coords = np.einsum("ij,tnj->tni", R, coords) + trans
+
+    discovery = AutomaticSkeletonDiscovery()
+    skel = discovery.discover(rot_coords, names, creature_name="rotated_human")
+
+    expected_normal = R @ np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    normal, offset = skel.symmetry_plane
+    dot_val = abs(float(np.dot(normal, expected_normal)))
+    assert dot_val > np.cos(np.radians(2.0)), f"Normal should align with rotated X axis, got dot={dot_val}"
+
+    c_rot = np.mean(rot_coords, axis=(0, 1))
+    plane_dist = abs(float(np.dot(normal, c_rot)) + offset)
+    assert plane_dist < 0.10
+
+    assert skel.symmetry_pairs.get("LeftArm") == "RightArm"
+    assert skel.symmetry_pairs.get("LeftUpLeg") == "RightUpLeg"
+
+
+def test_quadruped_symmetric_bone_pairing():
+    from iris.morphology.quadruped import QuadrupedMorphology
+    quad = QuadrupedMorphology()
+    T = 20
+    t = np.linspace(0, 1.0, T)
+    names = list(quad.joints)
+    coords = np.zeros((T, len(names), 3), dtype=np.float32)
+    for i, j_name in enumerate(names):
+        coords[:, i, :] = quad.rest_pose[j_name]
+        coords[:, i, 1] += 0.01 * np.sin(2 * np.pi * t)
+
+    discovery = AutomaticSkeletonDiscovery()
+    skel = discovery.discover(coords, names, creature_name="quad_discovered")
+
+    # Midline bones
+    assert ("Bone_Pelvis_Spine_Lumbar" in skel.midline_bones or "Bone_Spine_Lumbar_Pelvis" in skel.midline_bones)
+    assert "Bone_Spine_Lumbar_Spine_Thoracic" in skel.midline_bones
+    assert "Bone_Spine_Thoracic_Neck" in skel.midline_bones
+    assert "Bone_Neck_Head" in skel.midline_bones
+
+    # Forelimb bone pairing
+    assert skel.symmetry_bone_pairs.get("Bone_Spine_Thoracic_FrontLeft_Scapula") == "Bone_Spine_Thoracic_FrontRight_Scapula"
+    assert skel.symmetry_bone_pairs.get("Bone_FrontLeft_Scapula_FrontLeft_Knee") == "Bone_FrontRight_Scapula_FrontRight_Knee"
+    assert skel.symmetry_bone_pairs.get("Bone_FrontLeft_Knee_FrontLeft_Ankle") == "Bone_FrontRight_Knee_FrontRight_Ankle"
+
+    # Hindlimb bone pairing
+    assert skel.symmetry_bone_pairs.get("Bone_Pelvis_BackLeft_Hip") == "Bone_Pelvis_BackRight_Hip"
+    assert skel.symmetry_bone_pairs.get("Bone_BackLeft_Hip_BackLeft_Knee") == "Bone_BackRight_Hip_BackRight_Knee"
+    assert skel.symmetry_bone_pairs.get("Bone_BackLeft_Knee_BackLeft_Hock") == "Bone_BackRight_Knee_BackRight_Hock"
+
+
+def test_serpentine_unbranched_chain_discovery():
+    from iris.morphology.serpentine import SerpentineMorphology
+    serp = SerpentineMorphology(segment_count=12, total_length=2.4)
+    T = 30
+    t = np.linspace(0, 2.0 * np.pi, T)
+    names = list(serp.joints)
+    coords = np.zeros((T, len(names), 3), dtype=np.float32)
+    for i, j_name in enumerate(names):
+        pos = serp.rest_pose[j_name].copy()
+        coords[:, i, 0] = pos[0] + 0.15 * np.sin(t - i * 0.4)
+        coords[:, i, 1] = pos[1]
+        coords[:, i, 2] = pos[2]
+
+    discovery = AutomaticSkeletonDiscovery()
+    skel = discovery.discover(coords, names, creature_name="serpent_discovered")
+
+    for node in skel.joints.values():
+        assert len(node.children_names) <= 1, f"Serpentine should be unbranched chain, got {node.name} with {node.children_names}"
+
+    assert len(skel.midline_joints) == len(names)
+    assert len(skel.symmetry_pairs) == 0
+    assert skel.root_name in ("Vertebra_0", "Vertebra_11")
+
+
+def test_tentacular_radial_discovery():
+    from iris.morphology.tentacular import TentacularMorphology
+    tent = TentacularMorphology(tentacle_count=6, segments_per_tentacle=3)
+    T = 20
+    t = np.linspace(0, 1.0, T)
+    names = list(tent.joints)
+    coords = np.zeros((T, len(names), 3), dtype=np.float32)
+    for i, j_name in enumerate(names):
+        pos = tent.rest_pose[j_name].copy()
+        coords[:, i, :] = pos
+        coords[:, i, 1] += 0.02 * np.sin(2 * np.pi * t)
+
+    discovery = AutomaticSkeletonDiscovery()
+    skel = discovery.discover(coords, names, creature_name="squid_discovered")
+
+    assert skel.root_name == "CentralBody"
+    root_node = skel.joints["CentralBody"]
+    assert len(root_node.children_names) == 6
+
+
+def test_symmetry_enforced_mst_noise_robustness():
+    from iris.morphology.human import HumanMorphology
+    human = HumanMorphology()
+    T = 30
+    np.random.seed(42)
+    t = np.linspace(0, 1.0, T)
+    names = list(human.joints)
+    coords = np.zeros((T, len(names), 3), dtype=np.float32)
+    for i, j_name in enumerate(names):
+        coords[:, i, :] = human.rest_pose[j_name]
+        coords[:, i, 1] += 0.02 * np.sin(2 * np.pi * t)
+        if "right" in j_name.lower():
+            coords[:, i, :] += np.random.normal(0.0, 0.015, size=(T, 3)).astype(np.float32)
+
+    discovery = AutomaticSkeletonDiscovery(lambda_param=100.0)
+    skel = discovery.discover(coords, names, creature_name="noisy_human")
+
+    assert "LeftArm" in skel.joints and "RightArm" in skel.joints
+    assert skel.symmetry_pairs.get("LeftArm") == "RightArm"
+    assert skel.symmetry_pairs.get("LeftUpLeg") == "RightUpLeg"
+
+
+def test_discovered_skeleton_instance_and_metadata():
+    from iris.morphology.human import HumanMorphology
+    human = HumanMorphology()
+    T = 15
+    names = list(human.joints)
+    coords = np.zeros((T, len(names), 3), dtype=np.float32)
+    for i, j_name in enumerate(names):
+        coords[:, i, :] = human.rest_pose[j_name]
+
+    discovery = AutomaticSkeletonDiscovery()
+    skel = discovery.discover_from_trajectory(coords, names, creature_name="instance_check")
+
+    assert isinstance(skel, DiscoveredSkeleton)
+    assert isinstance(skel, Skeleton)
+    assert skel.symmetry_plane is not None
+    assert len(skel.symmetry_pairs) > 0
+    assert len(skel.midline_joints) > 0
+    assert len(skel.symmetry_bone_pairs) > 0
+    assert len(skel.midline_bones) > 0
