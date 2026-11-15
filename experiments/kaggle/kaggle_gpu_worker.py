@@ -22,6 +22,8 @@ except ImportError:
 
 LANDMARK_MAP = {
     0: "Nose",
+    7: "LeftEar",
+    8: "RightEar",
     11: "LeftShoulder",
     12: "RightShoulder",
     13: "LeftArm",
