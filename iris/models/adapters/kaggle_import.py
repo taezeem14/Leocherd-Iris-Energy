@@ -30,7 +30,32 @@ class KagglePoseImportAdapter(BasePoseEstimator):
 
     def _load(self) -> None:
         if not self.json_path.exists():
-            raise PoseEstimationError(f"Kaggle pose export file not found: {self.json_path}")
+            # Auto-resolve common Chrome/browser duplicate download filename variations
+            # (e.g., 'iris_kaggle_pose_data(2).json' vs 'iris_kaggle_pose_data (2).json')
+            parent = self.json_path.parent
+            name = self.json_path.name
+            candidates = [
+                parent / name.replace("(", " ("),
+                parent / name.replace(" (", "("),
+                parent / name.replace(" ", ""),
+            ]
+            # Also check case-insensitive / glob match in parent directory
+            if parent.exists():
+                stem_base = self.json_path.stem.split("(")[0].strip()
+                suffix = self.json_path.suffix
+                candidates.extend(parent.glob(f"*{stem_base}*{suffix}"))
+
+            resolved = None
+            for cand in candidates:
+                if cand.exists() and cand.is_file():
+                    resolved = cand
+                    break
+
+            if resolved is not None:
+                logger.info(f"Resolved path variation: '{self.json_path}' -> '{resolved}'")
+                self.json_path = resolved
+            else:
+                raise PoseEstimationError(f"Kaggle pose export file not found: {self.json_path}")
         try:
             with open(self.json_path, "r", encoding="utf-8") as f:
                 self.data = json.load(f)
