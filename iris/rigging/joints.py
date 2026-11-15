@@ -52,3 +52,7 @@ class BoneEdge:
         diff = cur_child - cur_parent
         self.current_length = float(np.linalg.norm(diff))
         return QuaternionMath.normalize_vector(diff)
+
+
+# Alias for compatibility
+Bone = BoneEdge

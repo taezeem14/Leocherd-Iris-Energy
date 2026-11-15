@@ -213,7 +213,13 @@ def main() -> None:
     p_diag.set_defaults(func=cmd_diagnostics)
 
     args = parser.parse_args()
-    args.func(args)
+    if hasattr(args, "func"):
+        args.func(args)
+    else:
+        parser.print_help()
+
+
+cli = main
 
 
 if __name__ == "__main__":

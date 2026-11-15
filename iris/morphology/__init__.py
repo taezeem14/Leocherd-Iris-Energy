@@ -7,6 +7,13 @@ from typing import Any, Dict, List, Optional, Type
 from iris.core.exceptions import MorphologyError
 from iris.morphology.base import BaseMorphology, BoneDefinition, JointLimit
 from iris.morphology.biped import BipedMorphology
+from iris.morphology.classifier import (
+    AvianMorphology,
+    MorphologyClassificationStage,
+    MorphologyClassifier,
+    MorphologyPrediction,
+    MorphologyType,
+)
 from iris.morphology.custom import CustomMorphology
 from iris.morphology.human import HumanMorphology
 from iris.morphology.quadruped import QuadrupedMorphology
@@ -23,6 +30,7 @@ class MorphologyRegistry:
         "biped": BipedMorphology,
         "serpentine": SerpentineMorphology,
         "tentacular": TentacularMorphology,
+        "avian": BipedMorphology,
     }
 
     @classmethod
@@ -50,8 +58,13 @@ __all__ = [
     "HumanMorphology",
     "QuadrupedMorphology",
     "BipedMorphology",
+    "AvianMorphology",
     "SerpentineMorphology",
     "TentacularMorphology",
     "CustomMorphology",
     "MorphologyRegistry",
+    "MorphologyType",
+    "MorphologyPrediction",
+    "MorphologyClassifier",
+    "MorphologyClassificationStage",
 ]

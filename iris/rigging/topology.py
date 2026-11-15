@@ -26,13 +26,34 @@ class SkeletonReconstructionStage(PipelineStage):
         if not context.pose_sequence:
             raise SkeletonError("No pose_sequence available in ExecutionContext.")
 
-        morphology_name = context.morphology_name or "human"
-        logger.info(f"Instantiating morphology plugin '{morphology_name}'...")
-        morphology = MorphologyRegistry.get(morphology_name)
-        context.morphology = morphology
+        morphology_name = (context.morphology_name or "human").lower()
 
-        # Construct graph skeleton from canonical morphology rest pose
-        skeleton = Skeleton.from_morphology(morphology)
+        if morphology_name in ("discover", "unsupervised"):
+            logger.info("Executing unsupervised automatic skeleton discovery...")
+            from iris.rigging.skeleton_discovery import discover_from_pose_sequence
+            skeleton = discover_from_pose_sequence(context.pose_sequence, creature_name="discovered_creature")
+            context.discovered_skeleton = skeleton
+        elif morphology_name == "auto":
+            if context.morphology_prediction:
+                inferred = context.morphology_prediction.predicted_type.value
+                logger.info(f"Auto-selected morphology from prediction: '{inferred}'")
+                morphology = MorphologyRegistry.get(inferred)
+                context.morphology = morphology
+                skeleton = Skeleton.from_morphology(morphology)
+            else:
+                from iris.morphology.classifier import MorphologyClassifier
+                pred = MorphologyClassifier().classify_from_poses(context.pose_sequence)
+                context.morphology_prediction = pred
+                inferred = pred.predicted_type.value
+                logger.info(f"Classified morphology as '{inferred}' with confidence {pred.confidence:.2f}")
+                morphology = MorphologyRegistry.get(inferred)
+                context.morphology = morphology
+                skeleton = Skeleton.from_morphology(morphology)
+        else:
+            logger.info(f"Instantiating morphology plugin '{morphology_name}'...")
+            morphology = MorphologyRegistry.get(morphology_name)
+            context.morphology = morphology
+            skeleton = Skeleton.from_morphology(morphology)
 
         context.skeleton = skeleton
         logger.info(

@@ -44,7 +44,9 @@ class ExecutionContext:
     pose_sequence: Optional[Any] = None
     motion_sequence: Optional[Any] = None
     morphology: Optional[Any] = None
+    morphology_prediction: Optional[Any] = None
     skeleton: Optional[Any] = None
+    discovered_skeleton: Optional[Any] = None
     animation: Optional[Any] = None
     exported_assets: Dict[str, str] = field(default_factory=dict)
 

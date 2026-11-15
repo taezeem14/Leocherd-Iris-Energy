@@ -82,6 +82,10 @@ class Skeleton:
             if b.rest_length <= 1e-6:
                 raise SkeletonError(f"Bone '{b.name}' has zero or invalid rest length ({b.rest_length}).")
 
+    def validate_hierarchy(self) -> None:
+        """Validates acyclic tree structure, root connectivity, and bone lengths."""
+        self.validate()
+
     def update_from_pose(self, pose: PoseFrame, enforce_bone_lengths: bool = True) -> None:
         """
         Applies observed world positions from a PoseFrame, regularizes bone lengths,

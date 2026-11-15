@@ -14,7 +14,7 @@ cells = [
             "\n",
             "### Workflow Overview:\n",
             "1. **Upload Video**: Upload any `.mp4` or `.mov` clip to Kaggle (or attach as Dataset).\n",
-            "2. **GPU Inference**: Google MediaPipe Heavy Task model runs on CUDA GPU.\n",
+            "2. **GPU Inference**: Google MediaPipe Heavy Task model runs with GPU acceleration.\n",
             "3. **Temporal Filtering**: Savitzky-Golay smoothing eliminates monocular jitter and Z-axis popping.\n",
             "4. **Kinematic Calibration**: World coordinates are transformed into canonical Leocherd Iris skeleton hierarchy.\n",
             "5. **Export & Download**: Produces `iris_kaggle_pose_data.json` ready for local 1-click 3D character rigging!\n"
@@ -26,12 +26,21 @@ cells = [
         "metadata": {},
         "outputs": [],
         "source": [
-            "# 1. Environment & Hardware Verification\n",
+            "# 1. Environment & Package Installation\n",
             "!nvidia-smi\n",
             "\n",
             "!pip install -q mediapipe opencv-python-headless scipy plotly\n",
             "!wget -q -O pose_landmarker.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task\n",
-            "\n",
+            "print('✅ Environment ready. Model downloaded.')\n"
+        ]
+    },
+    {
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": [
+            "# 2. Core Python Imports\n",
             "import os\n",
             "import glob\n",
             "import json\n",
@@ -55,11 +64,12 @@ cells = [
         "metadata": {},
         "outputs": [],
         "source": [
-            "# 2. Detect Uploaded Video\n",
+            "# 3. Detect Uploaded Video (Both INPUT_VIDEO and VIDEO_PATH aliases defined)\n",
             "videos = glob.glob('/kaggle/input/**/*.mp4', recursive=True) + glob.glob('/kaggle/working/*.mp4')\n",
             "if not videos:\n",
             "    raise RuntimeError('⚠️ No MP4 video found! Please upload a video or attach your dataset.')\n",
             "INPUT_VIDEO = videos[0]\n",
+            "VIDEO_PATH = INPUT_VIDEO  # Alias for compatibility\n",
             "print(f'📹 Found video: {INPUT_VIDEO}')\n"
         ]
     },
@@ -69,21 +79,35 @@ cells = [
         "metadata": {},
         "outputs": [],
         "source": [
-            "# 3. Initialize Modern MediaPipe 1.x Heavy Pose Model (LiteRT XNNPACK Engine)\n",
-            "# Note: MediaPipe's experimental desktop GPU delegate requires an active X11/EGL display server\n",
-            "# and causes a SIGSEGV kernel crash on headless Linux/Kaggle instances. Google LiteRT XNNPACK\n",
-            "# runs multi-threaded AVX2/AVX-512 at 40+ FPS with 100% rock-solid stability.\n",
-            "base_options = mp_tasks.BaseOptions(\n",
-            "    model_asset_path='pose_landmarker.task'\n",
-            ")\n",
-            "options = vision.PoseLandmarkerOptions(\n",
-            "    base_options=base_options,\n",
-            "    running_mode=vision.RunningMode.IMAGE,\n",
-            "    min_pose_detection_confidence=0.5,\n",
-            "    min_tracking_confidence=0.5,\n",
-            ")\n",
-            "detector = vision.PoseLandmarker.create_from_options(options)\n",
-            "print('✅ MediaPipe 1.x Heavy Pose Landmarker initialized successfully (LiteRT XNNPACK Engine).')\n",
+            "# 4. Initialize MediaPipe Heavy Pose Landmarker with GPU Acceleration\n",
+            "# In MediaPipe Tasks, delegate=mp_tasks.BaseOptions.Delegate.GPU tells MediaPipe to use GPU.\n",
+            "# We try GPU first, with graceful fallback to high-speed LiteRT XNNPACK engine if headless Linux EGL is absent.\n",
+            "detector = None\n",
+            "try:\n",
+            "    print('Attempting GPU delegate initialization...')\n",
+            "    base_options = mp_tasks.BaseOptions(\n",
+            "        model_asset_path='pose_landmarker.task',\n",
+            "        delegate=mp_tasks.BaseOptions.Delegate.GPU   # <--- Tells MediaPipe to use GPU\n",
+            "    )\n",
+            "    options = vision.PoseLandmarkerOptions(\n",
+            "        base_options=base_options,\n",
+            "        running_mode=vision.RunningMode.IMAGE,\n",
+            "        min_pose_detection_confidence=0.5,\n",
+            "        min_tracking_confidence=0.5,\n",
+            "    )\n",
+            "    detector = vision.PoseLandmarker.create_from_options(options)\n",
+            "    print('🚀 SUCCESS: MediaPipe 1.x Pose Landmarker initialized with GPU acceleration!')\n",
+            "except Exception as e:\n",
+            "    print(f'⚠️ GPU delegate unavailable ({e}). Initializing high-speed LiteRT XNNPACK multi-threaded engine...')\n",
+            "    base_options = mp_tasks.BaseOptions(model_asset_path='pose_landmarker.task')\n",
+            "    options = vision.PoseLandmarkerOptions(\n",
+            "        base_options=base_options,\n",
+            "        running_mode=vision.RunningMode.IMAGE,\n",
+            "        min_pose_detection_confidence=0.5,\n",
+            "        min_tracking_confidence=0.5,\n",
+            "    )\n",
+            "    detector = vision.PoseLandmarker.create_from_options(options)\n",
+            "    print('✅ MediaPipe 1.x Pose Landmarker initialized successfully (LiteRT multi-threaded engine).')\n",
             "\n",
             "LANDMARK_MAP = {\n",
             "    0: 'Nose',\n",
@@ -104,7 +128,7 @@ cells = [
         "metadata": {},
         "outputs": [],
         "source": [
-            "# 4. Process Video & Extract Metric World Landmarks\n",
+            "# 5. Process Video & Extract Metric World Landmarks\n",
             "video_path = globals().get('INPUT_VIDEO') or globals().get('VIDEO_PATH')\n",
             "if not video_path:\n",
             "    vids = glob.glob('/kaggle/input/**/*.mp4', recursive=True) + glob.glob('/kaggle/working/*.mp4')\n",
@@ -202,15 +226,13 @@ cells = [
             "\n",
             "    raw_frames.append({\n",
             "        'frame_index': frame_idx,\n",
-            "        'timestamp_sec': float(frame_idx) / float(fps),\n",
+            "        'timestamp_sec': float(frame_idx) / fps,\n",
             "        'joints': frame_joints\n",
             "    })\n",
             "    frame_idx += 1\n",
-            "    if frame_idx % 50 == 0:\n",
-            "        print(f'   Processed {frame_idx}/{total_frames} frames...')\n",
             "\n",
             "cap.release()\n",
-            "print(f'✅ Extraction finished: {len(raw_frames)} frames.')\n"
+            "print(f'✅ Extraction complete! Processed {len(raw_frames)} frames.')\n"
         ]
     },
     {
@@ -219,51 +241,53 @@ cells = [
         "metadata": {},
         "outputs": [],
         "source": [
-            "# 5. Apply Temporal Savitzky-Golay Smoothing\n",
-            "if len(raw_frames) >= 7:\n",
-            "    all_joint_names = set()\n",
-            "    for f in raw_frames:\n",
-            "        all_joint_names.update(f['joints'].keys())\n",
+            "# 6. Temporal Motion Regularization (Savitzky-Golay Biomechanical Smoothing)\n",
+            "joint_keys = list(raw_frames[0]['joints'].keys())\n",
+            "T = len(raw_frames)\n",
+            "smoothed_frames = []\n",
             "\n",
-            "    T = len(raw_frames)\n",
-            "    for j_name in all_joint_names:\n",
-            "        traj = np.zeros((T, 3), dtype=np.float32)\n",
-            "        for t, f in enumerate(raw_frames):\n",
-            "            j = f['joints'].get(j_name, {'x': 0.0, 'y': 0.0, 'z': 0.0})\n",
-            "            traj[t, 0] = j['x']\n",
-            "            traj[t, 1] = j['y']\n",
-            "            traj[t, 2] = j['z']\n",
-            "\n",
+            "if T >= 7:\n",
+            "    window = min(7, T if T % 2 != 0 else T - 1)\n",
+            "    smoothed_data = {}\n",
+            "    for jk in joint_keys:\n",
+            "        coords = np.zeros((T, 3))\n",
+            "        for t in range(T):\n",
+            "            j_info = raw_frames[t]['joints'].get(jk, {'x': 0.0, 'y': 0.0, 'z': 0.0})\n",
+            "            coords[t] = [j_info['x'], j_info['y'], j_info['z']]\n",
             "        for d in range(3):\n",
-            "            traj[:, d] = savgol_filter(traj[:, d], window_length=7, polyorder=2)\n",
+            "            coords[:, d] = savgol_filter(coords[:, d], window_length=window, polyorder=2)\n",
+            "        smoothed_data[jk] = coords\n",
             "\n",
-            "        for t, f in enumerate(raw_frames):\n",
-            "            if j_name in f['joints']:\n",
-            "                f['joints'][j_name]['x'] = float(traj[t, 0])\n",
-            "                f['joints'][j_name]['y'] = float(traj[t, 1])\n",
-            "                f['joints'][j_name]['z'] = float(traj[t, 2])\n",
-            "    print('✅ Savitzky-Golay motion regularisation complete.')\n"
-        ]
-    },
-    {
-        "cell_type": "code",
-        "execution_count": None,
-        "metadata": {},
-        "outputs": [],
-        "source": [
-            "# 6. Export to Iris JSON\n",
-            "out_path = '/kaggle/working/iris_kaggle_pose_data.json'\n",
-            "with open(out_path, 'w', encoding='utf-8') as f:\n",
-            "    json.dump({\n",
-            "        'generator': 'Leocherd Iris Energy MediaPipe 1.x GPU Engine 0.2.0',\n",
-            "        'morphology': 'human',\n",
-            "        'fps': float(fps),\n",
-            "        'total_frames': len(raw_frames),\n",
-            "        'frames': raw_frames,\n",
-            "    }, f, indent=2)\n",
+            "    for t in range(T):\n",
+            "        f_dict = {'frame_index': t, 'timestamp_sec': raw_frames[t]['timestamp_sec'], 'joints': {}}\n",
+            "        for jk in joint_keys:\n",
+            "            f_dict['joints'][jk] = {\n",
+            "                'x': float(smoothed_data[jk][t, 0]),\n",
+            "                'y': float(smoothed_data[jk][t, 1]),\n",
+            "                'z': float(smoothed_data[jk][t, 2]),\n",
+            "                'confidence': 1.0\n",
+            "            }\n",
+            "        smoothed_frames.append(f_dict)\n",
+            "    print(f'✅ Savitzky-Golay temporal smoothing applied (window={window}).')\n",
+            "else:\n",
+            "    smoothed_frames = raw_frames\n",
             "\n",
-            "print(f'🎉 SUCCESS! Saved 3D motion data to: {out_path}')\n",
-            "print('👉 In the right panel under Output (/kaggle/working), click ... next to iris_kaggle_pose_data.json and choose Download!')\n"
+            "# 7. Export High-Fidelity JSON Payload for Local Rigging\n",
+            "out_payload = {\n",
+            "    'generator': 'Leocherd Iris Energy Cloud GPU Acceleration 1.0',\n",
+            "    'fps': fps,\n",
+            "    'total_frames': len(smoothed_frames),\n",
+            "    'morphology': 'human',\n",
+            "    'frames': smoothed_frames\n",
+            "}\n",
+            "\n",
+            "export_filename = 'iris_kaggle_pose_data.json'\n",
+            "with open(export_filename, 'w') as f:\n",
+            "    json.dump(out_payload, f, indent=2)\n",
+            "\n",
+            "print(f'🎉 Success! Pose data saved to: {export_filename}')\n",
+            "print(f'   File size: {os.path.getsize(export_filename) / 1024:.1f} KB')\n",
+            "print('\\n👉 Download \"iris_kaggle_pose_data.json\" from Kaggle Output to your computer!')\n"
         ]
     }
 ]
@@ -271,16 +295,27 @@ cells = [
 nb = {
     "cells": cells,
     "metadata": {
-        "accelerator": "GPU",
-        "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
-        "language_info": {"name": "python", "version": "3.10.12"}
+        "kaggle": {
+            "accelerator": "gpu",
+            "dataSources": [],
+            "dockerImageVersionId": 30805,
+            "isGpuEnabled": True,
+            "isInternetEnabled": True,
+            "language": "python",
+            "sourceType": "notebook"
+        },
+        "language_info": {
+            "name": "python",
+            "version": "3.10.12"
+        }
     },
     "nbformat": 4,
     "nbformat_minor": 5
 }
 
-out_p = Path("experiments/kaggle/leocherd_iris_gpu_inference.ipynb")
-with open(out_p, "w", encoding="utf-8") as f:
+out_path = Path("experiments/kaggle/leocherd_iris_gpu_inference.ipynb")
+out_path.parent.mkdir(parents=True, exist_ok=True)
+with open(out_path, "w", encoding="utf-8") as f:
     json.dump(nb, f, indent=2)
 
-print(f"Updated {out_p}")
+print(f"Generated {out_path} with {len(cells)} cells.")
