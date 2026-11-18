@@ -282,10 +282,19 @@ class GltfExporter(BaseAssetExporter):
             else:
                 norms = np.asarray(norms, dtype=np.float32)
 
-            # Sanitize weights and indices for strict glTF conformance
+            # Sanitize weights and indices for strict glTF conformance:
+            # 1. Sort influences descending per vertex
+            order = np.argsort(-j_weights, axis=1)
+            row_idx = np.arange(len(j_weights))[:, None]
+            j_weights = j_weights[row_idx, order]
+            j_indices = j_indices[row_idx, order]
+
+            # 2. Normalize sum to exactly 1.0
             w_sums = np.sum(j_weights, axis=1, keepdims=True)
             w_sums[w_sums < 1e-6] = 1.0
-            j_weights = j_weights / w_sums
+            j_weights = (j_weights / w_sums).astype(np.float32)
+
+            # 3. Zero out insignificant weights and reset joint index to 0
             zero_mask = j_weights <= 1e-6
             j_weights[zero_mask] = 0.0
             j_indices[zero_mask] = 0
@@ -371,17 +380,22 @@ class GltfExporter(BaseAssetExporter):
             }
         ]
 
-        materials = [
-            {
-                "name": "Iris_Human_Material",
-                "pbrMetallicRoughness": {
-                    "baseColorFactor": [0.85, 0.72, 0.62, 1.0],  # Natural anatomical warm skin tone
-                    "metallicFactor": 0.05,
-                    "roughnessFactor": 0.65,
-                },
-                "doubleSided": True,
-            }
-        ]
+        custom_material = kwargs.get("material", None)
+        if custom_material is not None:
+            materials = [custom_material]
+        else:
+            materials = [
+                {
+                    "name": "Cyan_Luminous_Skeletal_Material",
+                    "pbrMetallicRoughness": {
+                        "baseColorFactor": [0.0, 1.0, 0.85, 1.0],
+                        "metallicFactor": 0.15,
+                        "roughnessFactor": 0.25,
+                    },
+                    "emissiveFactor": [0.0, 0.85, 0.72],
+                    "doubleSided": True,
+                }
+            ]
 
         # 3c. Skinned Mesh Node bound to skeleton skin 0
         mesh_node_idx = len(nodes)

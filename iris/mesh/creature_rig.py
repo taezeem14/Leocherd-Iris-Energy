@@ -251,6 +251,286 @@ class CreatureRigBuilder:
         return skeleton
 
 
+class CreatureSkeletalFigureGenerator:
+    """
+    Generates the exact production-grade 3D luminous cyan skeletal figure
+    composed of articulated octahedral diamond bones and spherical joint beads
+    matching the reference creature concept art.
+    """
+
+    @staticmethod
+    def _create_basis(direction: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        d = direction / (np.linalg.norm(direction) + 1e-8)
+        if abs(d[2]) < 0.85:
+            ref = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        else:
+            ref = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+        u = np.cross(d, ref)
+        u = u / (np.linalg.norm(u) + 1e-8)
+        v = np.cross(d, u)
+        v = v / (np.linalg.norm(v) + 1e-8)
+        return u.astype(np.float32), v.astype(np.float32)
+
+    @classmethod
+    def generate_octahedral_bone(
+        cls,
+        p_start: np.ndarray,
+        p_end: np.ndarray,
+        j_parent: int,
+        j_child: int,
+        radius: float = 0.035,
+        bulge_t: float = 0.25,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        vec = p_end - p_start
+        length = float(np.linalg.norm(vec))
+        if length < 1e-4:
+            return (
+                np.zeros((0, 3), dtype=np.float32),
+                np.zeros((0, 3), dtype=np.float32),
+                np.zeros((0, 3), dtype=np.uint32),
+                np.zeros((0, 4), dtype=np.uint16),
+                np.zeros((0, 4), dtype=np.float32),
+            )
+        u, v = cls._create_basis(vec)
+        p_mid = p_start + bulge_t * vec
+        r = float(min(radius, length * 0.24))
+
+        v0 = p_start
+        v1 = p_mid + r * u
+        v2 = p_mid + r * v
+        v3 = p_mid - r * u
+        v4 = p_mid - r * v
+        v5 = p_end
+        verts = np.array([v0, v1, v2, v3, v4, v5], dtype=np.float32)
+
+        ji = np.array(
+            [
+                [j_parent, 0, 0, 0],
+                [j_parent, j_child, 0, 0],
+                [j_parent, j_child, 0, 0],
+                [j_parent, j_child, 0, 0],
+                [j_parent, j_child, 0, 0],
+                [j_child, 0, 0, 0],
+            ],
+            dtype=np.uint16,
+        )
+
+        jw = np.array(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [1.0 - bulge_t, bulge_t, 0.0, 0.0],
+                [1.0 - bulge_t, bulge_t, 0.0, 0.0],
+                [1.0 - bulge_t, bulge_t, 0.0, 0.0],
+                [1.0 - bulge_t, bulge_t, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+
+        faces = np.array(
+            [
+                [0, 1, 2],
+                [0, 2, 3],
+                [0, 3, 4],
+                [0, 4, 1],
+                [5, 2, 1],
+                [5, 3, 2],
+                [5, 4, 3],
+                [5, 1, 4],
+            ],
+            dtype=np.uint32,
+        )
+
+        norms = np.zeros_like(verts)
+        for f in faces:
+            fn = np.cross(verts[f[1]] - verts[f[0]], verts[f[2]] - verts[f[0]])
+            for idx in f:
+                norms[idx] += fn
+        nlen = np.linalg.norm(norms, axis=1, keepdims=True)
+        nlen[nlen < 1e-6] = 1.0
+        norms = (norms / nlen).astype(np.float32)
+
+        return verts, norms, faces, ji, jw
+
+    @classmethod
+    def generate_joint_sphere(
+        cls,
+        center: np.ndarray,
+        radius: float,
+        j_idx: int,
+        lat_segments: int = 8,
+        lon_segments: int = 12,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        verts = []
+        norms = []
+        faces = []
+
+        # South pole
+        verts.append([float(center[0]), float(center[1] - radius), float(center[2])])
+        norms.append([0.0, -1.0, 0.0])
+
+        for i in range(1, lat_segments):
+            theta = math.pi * (1.0 - float(i) / float(lat_segments))
+            y = -radius * math.cos(theta)
+            r = radius * math.sin(theta)
+            for j in range(lon_segments):
+                phi = 2.0 * math.pi * float(j) / float(lon_segments)
+                x = r * math.cos(phi)
+                z = r * math.sin(phi)
+                verts.append([float(center[0] + x), float(center[1] + y), float(center[2] + z)])
+                norms.append([float(x / radius), float(y / radius), float(z / radius)])
+
+        # North pole
+        north_idx = len(verts)
+        verts.append([float(center[0]), float(center[1] + radius), float(center[2])])
+        norms.append([0.0, 1.0, 0.0])
+
+        # South fan
+        for j in range(lon_segments):
+            next_j = (j + 1) % lon_segments
+            faces.append([0, 1 + next_j, 1 + j])
+
+        for i in range(lat_segments - 2):
+            b0 = 1 + i * lon_segments
+            b1 = 1 + (i + 1) * lon_segments
+            for j in range(lon_segments):
+                next_j = (j + 1) % lon_segments
+                faces.append([b0 + j, b0 + next_j, b1 + next_j])
+                faces.append([b0 + j, b1 + next_j, b1 + j])
+
+        b_last = 1 + (lat_segments - 2) * lon_segments
+        for j in range(lon_segments):
+            next_j = (j + 1) % lon_segments
+            faces.append([b_last + j, b_last + next_j, north_idx])
+
+        V = len(verts)
+        ji = np.zeros((V, 4), dtype=np.uint16)
+        ji[:, 0] = j_idx
+        jw = np.zeros((V, 4), dtype=np.float32)
+        jw[:, 0] = 1.0
+        return (
+            np.array(verts, dtype=np.float32),
+            np.array(norms, dtype=np.float32),
+            np.array(faces, dtype=np.uint32),
+            ji,
+            jw,
+        )
+
+    @classmethod
+    def generate_skeletal_figure(
+        cls,
+        skeleton: Skeleton,
+        profile: CreatureMorphologyProfile,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        joint_names = list(skeleton.joints.keys())
+        j_map = {n: i for i, n in enumerate(joint_names)}
+
+        all_v = []
+        all_n = []
+        all_f = []
+        all_ji = []
+        all_jw = []
+        v_offset = 0
+
+        def append_component(v, n, f, ji, jw):
+            nonlocal v_offset
+            if len(v) == 0:
+                return
+            all_v.append(v)
+            all_n.append(n)
+            all_f.append(f + v_offset)
+            all_ji.append(ji)
+            all_jw.append(jw)
+            v_offset += len(v)
+
+        # 1. Joint spheres (cyan glowing beads)
+        for j_name, j_node in skeleton.joints.items():
+            idx = j_map[j_name]
+            if j_name in ["Head", "Hips", "Chest"]:
+                r = 0.035
+            elif j_name in ["LeftArm", "RightArm", "LeftUpLeg", "RightUpLeg"]:
+                r = 0.028
+            elif j_name in ["LeftLeg", "RightLeg", "LeftForeArm", "RightForeArm"]:
+                r = 0.024
+            else:
+                r = 0.020
+            v, n, f, ji, jw = cls.generate_joint_sphere(j_node.rest_world_pos, r, idx)
+            append_component(v, n, f, ji, jw)
+
+        # 2. Main articulated octahedral diamond bones
+        for b_name, bone in skeleton.bones.items():
+            p_pos = skeleton.joints[bone.parent_joint].rest_world_pos
+            c_pos = skeleton.joints[bone.child_joint].rest_world_pos
+            jp = j_map[bone.parent_joint]
+            jc = j_map[bone.child_joint]
+            if "Spine" in b_name or "Chest" in b_name:
+                rad = 0.055 * profile.bulk_factor
+            elif "Hips" in b_name:
+                rad = 0.048 * profile.bulk_factor
+            elif "Arm" in b_name:
+                rad = 0.038 * profile.bulk_factor
+            else:
+                rad = 0.042 * profile.bulk_factor
+            v, n, f, ji, jw = cls.generate_octahedral_bone(p_pos, c_pos, jp, jc, radius=rad)
+            append_component(v, n, f, ji, jw)
+
+        # 3. Head Mohawk Crest (as seen in the reference image)
+        if "Head" in j_map:
+            p_head = skeleton.joints["Head"].rest_world_pos
+            p_crest = p_head + np.array([0.0, 0.12 * profile.height_m, 0.01], dtype=np.float32)
+            v, n, f, ji, jw = cls.generate_octahedral_bone(
+                p_head, p_crest, j_map["Head"], j_map["Head"], radius=0.032, bulge_t=0.35
+            )
+            append_component(v, n, f, ji, jw)
+            v, n, f, ji, jw = cls.generate_joint_sphere(p_crest, 0.018, j_map["Head"])
+            append_component(v, n, f, ji, jw)
+
+        # 4. Pelvic Buckle Diamond (as seen in the reference image)
+        if "Hips" in j_map:
+            p_hips = skeleton.joints["Hips"].rest_world_pos
+            p_buckle = p_hips + np.array([0.0, -0.08, 0.05], dtype=np.float32)
+            v, n, f, ji, jw = cls.generate_octahedral_bone(
+                p_hips, p_buckle, j_map["Hips"], j_map["Hips"], radius=0.045 * profile.bulk_factor, bulge_t=0.5
+            )
+            append_component(v, n, f, ji, jw)
+
+        # 5. Clenched Fist Finger Rays with Knuckle Beads (as seen in the reference image)
+        for hand_name, sign_x in [("LeftHand", -1.0), ("RightHand", 1.0)]:
+            if hand_name in j_map:
+                p_h = skeleton.joints[hand_name].rest_world_pos
+                h_idx = j_map[hand_name]
+                finger_offsets = [
+                    np.array([0.035 * sign_x, -0.040, 0.035], dtype=np.float32),
+                    np.array([0.015 * sign_x, -0.070, 0.020], dtype=np.float32),
+                    np.array([-0.005 * sign_x, -0.075, 0.010], dtype=np.float32),
+                    np.array([-0.025 * sign_x, -0.065, 0.000], dtype=np.float32),
+                ]
+                for f_off in finger_offsets:
+                    p_tip = p_h + f_off
+                    v, n, f, ji, jw = cls.generate_octahedral_bone(
+                        p_h, p_tip, h_idx, h_idx, radius=0.014, bulge_t=0.4
+                    )
+                    append_component(v, n, f, ji, jw)
+                    v, n, f, ji, jw = cls.generate_joint_sphere(p_tip, 0.010, h_idx)
+                    append_component(v, n, f, ji, jw)
+
+        final_v = np.vstack(all_v).astype(np.float32)
+        final_n = np.vstack(all_n).astype(np.float32)
+        final_f = np.vstack(all_f).astype(np.int32)
+        final_ji = np.vstack(all_ji).astype(np.uint16)
+        final_jw = np.vstack(all_jw).astype(np.float32)
+
+        # Cylindrical UVs
+        min_v = final_v.min(axis=0)
+        max_v = final_v.max(axis=0)
+        span_v = np.maximum(max_v - min_v, 1e-4)
+        u = np.clip((final_v[:, 0] - min_v[0]) / span_v[0], 0.0, 1.0)
+        v_coord = np.clip(1.0 - (final_v[:, 1] - min_v[1]) / span_v[1], 0.0, 1.0)
+        uvs = np.column_stack([u, v_coord]).astype(np.float32)
+
+        return final_v, final_n, uvs, final_f, final_ji, final_jw
+
+
 class CreatureSkinnedMeshGenerator:
     """Generates the primary watertight textured skinned 3D mesh matching the creature."""
 
@@ -262,46 +542,11 @@ class CreatureSkinnedMeshGenerator:
         texture_img: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Generates a single connected humanoid mannequin mesh with proper topology.
-        Returns:
-            vertices: (V, 3) float32
-            normals: (V, 3) float32
-            uvs: (V, 2) float32
-            faces: (F, 3) int32
-            joint_indices: (V, 4) uint16
-            joint_weights: (V, 4) float32
+        Generates the production-grade 3D luminous cyan skeletal figure
+        composed of articulated octahedral diamond bones and spherical joint beads.
         """
-        # Use the connected mannequin generator (torso + head + neck + limbs as one mesh)
-        # instead of per-bone capsules which produce disconnected body parts
-        v, n, f, ji, jw = ProxyMeshGenerator.create_skinned_mannequin(skeleton)
+        return CreatureSkeletalFigureGenerator.generate_skeletal_figure(skeleton, profile)
 
-        # Scale mesh vertices outward based on creature bulk factor
-        bulk = profile.bulk_factor
-        if bulk != 1.0:
-            v[:, 0] *= float(bulk * 1.1)
-            v[:, 2] *= float(bulk * 1.05)
-            n[:, 0] *= float(bulk)
-            n[:, 2] *= float(bulk)
-            norms = np.linalg.norm(n, axis=1, keepdims=True)
-            n = np.where(norms > 1e-6, n / norms, n)
-
-        # Compute cylindrical-planar projective UV coordinates
-        min_v = v.min(axis=0)
-        max_v = v.max(axis=0)
-        span_v = np.maximum(max_v - min_v, 1e-4)
-
-        u = np.clip((v[:, 0] - min_v[0]) / span_v[0], 0.0, 1.0)
-        v_coord = np.clip(1.0 - (v[:, 1] - min_v[1]) / span_v[1], 0.0, 1.0)
-        uvs = np.column_stack([u, v_coord]).astype(np.float32)
-
-        return (
-            v.astype(np.float32),
-            n.astype(np.float32),
-            uvs.astype(np.float32),
-            f.astype(np.int32),
-            ji.astype(np.uint16),
-            jw.astype(np.float32),
-        )
 
 
 class CreatureReconstructionPipeline:
@@ -440,11 +685,22 @@ class CreatureReconstructionPipeline:
         if "gltf" in formats:
             gltf_path = out_dir / "creature_rigged.gltf"
             gltf_exporter = GLTFExporter()
+            cyan_material = {
+                "name": "Cyan_Luminous_Skeletal_Material",
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.0, 1.0, 0.85, 1.0],
+                    "metallicFactor": 0.15,
+                    "roughnessFactor": 0.25,
+                },
+                "emissiveFactor": [0.0, 0.90, 0.78],
+                "doubleSided": True,
+            }
             gltf_exporter.export(
                 skeleton=skeleton,
                 animation=animation,
                 output_path=gltf_path,
                 mesh=(verts, normals, faces, joint_idx, joint_weights),
+                material=cyan_material,
             )
             exported_files["gltf"] = str(gltf_path)
             logger.info(f"Exported Unity/WebGL glTF to: {gltf_path}")
