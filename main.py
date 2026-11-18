@@ -210,6 +210,63 @@ def cmd_mesh_reconstruct(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_creature_reconstruct(args: argparse.Namespace) -> None:
+    from iris.mesh.creature_rig import CreatureReconstructionPipeline
+
+    image_path = args.image_path
+    anim_source = getattr(args, "animation", None)
+    out_dir = args.output_dir or "outputs/creature_rig"
+    formats = [f.strip().lower() for f in args.formats.split(",") if f.strip()]
+
+    print("=" * 65)
+    print(" LEOCHERD IRIS ENERGY - 2D CREATURE IMAGE TO 3D SKINNED RIG")
+    print("=" * 65)
+    print(f" Creature Image        : {image_path}")
+    print(f" Motion Source         : {anim_source or 'Default Creature Pose / Sway'}")
+    print(f" Target Engine Formats : {', '.join(formats).upper()}")
+    print(f" Destination Directory : {out_dir}")
+    print("-" * 65)
+
+    pipeline = CreatureReconstructionPipeline()
+    res = pipeline.process_creature(
+        image_path=image_path,
+        output_dir=out_dir,
+        animation_source_json=anim_source,
+        export_formats=formats,
+    )
+
+    print("-" * 65)
+    print(" 🎉 CREATURE 3D RIGGING & SKINNED MESH RECONSTRUCTION SUCCESSFUL!")
+    print(" Exported Multi-Engine Production Assets:")
+    for k, v in res.items():
+        print(f"   [{k.upper():<14}] -> {v}")
+    print("=" * 65)
+    print("👉 View instantly in browser: python main.py view")
+    print("👉 Or drag creature_rigged.gltf into http://localhost:8000/viewer")
+    print("=" * 65)
+
+
+def cmd_view(args: argparse.Namespace) -> None:
+    import webbrowser
+    import uvicorn
+    from iris.core.config import get_settings
+
+    settings = get_settings()
+    host = args.host or settings.api_host
+    port = args.port or settings.api_port
+    url = f"http://{host}:{port}/viewer"
+
+    print("=" * 65)
+    print(" LEOCHERD IRIS ENERGY - WEB 3D SKELETAL & MOCAP VIEWER")
+    print("=" * 65)
+    print(f" Serving Viewer at     : {url}")
+    print(f" Drop Zone Ready For   : .gltf, .glb, .obj")
+    print("=" * 65)
+
+    webbrowser.open(url)
+    uvicorn.run("iris.api.main:app", host=host, port=port, reload=False)
+
+
 def cmd_diagnostics(args: argparse.Namespace) -> None:
     from scripts.system_diagnostics import inspect_system, print_report
 
@@ -267,6 +324,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_kaggle.add_argument("--output-dir", "-o", default="outputs/kaggle_export", help="Output directory")
     p_kaggle.add_argument("--formats", default="gltf,bvh,blender", help="Comma-separated export formats")
     p_kaggle.set_defaults(func=cmd_import_kaggle)
+
+    # creature-reconstruct
+    p_creature = subparsers.add_parser("creature-reconstruct", help="Reconstruct 3D skinned mesh and rig from 2D creature image")
+    p_creature.add_argument("image_path", help="Path to creature image / concept art (.jpg, .png, etc.)")
+    p_creature.add_argument("--animation", "-a", default=None, help="Optional animation JSON or mocap to retarget onto creature")
+    p_creature.add_argument("--output-dir", "-o", default="outputs/creature_rig", help="Output directory")
+    p_creature.add_argument("--formats", default="gltf,blend,fbx,bvh", help="Comma-separated export formats (gltf,blend,fbx,bvh)")
+    p_creature.set_defaults(func=cmd_creature_reconstruct)
+
+    # view
+    p_view = subparsers.add_parser("view", help="Launch interactive 3D Web Viewer in browser")
+    p_view.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1)")
+    p_view.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+    p_view.set_defaults(func=cmd_view)
 
     # run-server
     p_server = subparsers.add_parser("run-server", help="Launch FastAPI REST service")

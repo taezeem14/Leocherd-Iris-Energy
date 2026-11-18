@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Leocherd Iris Energy — Universal 3D Motion & Skeleton Viewer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0a0c10;
+      --bg-panel: rgba(16, 20, 28, 0.85);
+      --bg-glass: rgba(22, 28, 40, 0.65);
+      --border: rgba(0, 255, 204, 0.18);
+      --border-bright: #00ffcc;
+      --cyan: #00ffcc;
+      --cyan-glow: rgba(0, 255, 204, 0.45);
+      --orange: #ff9d00;
+      --purple: #9d4edd;
+      --blue: #0099ff;
+      --text-main: #f0f4f8;
+      --text-dim: #8b9bb4;
+      --danger: #ff4757;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Navigation Bar */
+    header {
+      width: 100vw;
+      height: 60px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      font-size: 1.15rem;
+      letter-spacing: 0.5px;
+    }
+
+    .brand-badge {
+      background: linear-gradient(135deg, #00ffcc, #0099ff);
+      color: #000;
+      font-size: 0.72rem;
+      font-weight: 900;
+      padding: 3px 8px;
+      border-radius: 4px;
+      letter-spacing: 1px;
+    }
+
+    .top-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .custom-file-upload {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: rgba(0, 255, 204, 0.12);
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .custom-file-upload:hover {
+      background: var(--cyan);
+      color: #000;
+      box-shadow: 0 0 15px var(--cyan-glow);
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    .btn-toggle {
+      background: var(--bg-glass);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text-dim);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-toggle.active {
+      background: rgba(0, 255, 204, 0.15);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      box-shadow: 0 0 12px rgba(0, 255, 204, 0.25);
+    }
+
+    /* 3D Viewport Area - EXACT SIZING SPECIFIED BY USER */
+    #viewer-container {
+      width: 100vw;
+      height: 80vh;
+      position: relative;
+      background: radial-gradient(circle at center, #141923 0%, #080a0e 100%);
+    }
+
+    #viewport-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Drag & Drop Overlay */
+    #drop-zone {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(10, 12, 16, 0.88);
+      border: 3px dashed var(--cyan);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      z-index: 40;
+      pointer-events: none;
+    }
+
+    #drop-zone.active {
+      display: flex;
+    }
+
+    /* Floating Telemetry & Skeleton Info HUD */
+    .hud-overlay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      padding: 14px 18px;
+      border-radius: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      z-index: 10;
+      pointer-events: auto;
+      max-width: 320px;
+      backdrop-filter: blur(8px);
+    }
+
+    .hud-title {
+      font-weight: 700;
+      color: var(--cyan);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-dim);
+    }
+
+    .hud-val {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    /* Right Side Engine Export Dock */
+    .export-dock {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 10;
+    }
+
+    .export-btn {
+      background: var(--bg-panel);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-main);
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      backdrop-filter: blur(8px);
+      transition: all 0.2s ease;
+    }
+
+    .export-btn:hover {
+      transform: translateX(-4px);
+    }
+
+    .export-btn.blender:hover {
+      border-color: #ff9d00;
+      color: #ff9d00;
+      box-shadow: 0 0 15px rgba(255, 157, 0, 0.3);
+    }
+
+    .export-btn.unity:hover {
+      border-color: #0099ff;
+      color: #0099ff;
+      box-shadow: 0 0 15px rgba(0, 153, 255, 0.3);
+    }
+
+    .export-btn.unreal:hover {
+      border-color: #9d4edd;
+      color: #9d4edd;
+      box-shadow: 0 0 15px rgba(157, 78, 221, 0.3);
+    }
+
+    /* Bottom Playback Control Dock */
+    footer {
+      width: 100vw;
+      height: calc(20vh - 60px);
+      min-height: 80px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 10px 32px;
+      gap: 10px;
+      z-index: 50;
+    }
+
+    .timeline-container {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .time-slider {
+      flex: 1;
+      height: 6px;
+      -webkit-appearance: none;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .time-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--cyan);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    .time-display {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--cyan);
+      min-width: 120px;
+      text-align: right;
+    }
+
+    .playback-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-action {
+      background: rgba(0, 255, 204, 0.12);
+      border: 1px solid var(--border-bright);
+      color: var(--cyan);
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-action:hover {
+      background: var(--cyan);
+      color: #000;
+      box-shadow: 0 0 12px var(--cyan-glow);
+    }
+
+    .btn-secondary {
+      background: var(--bg-glass);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text-dim);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    .btn-secondary:hover {
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    select.speed-select {
+      background: var(--bg-glass);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-main);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      outline: none;
+      cursor: pointer;
+    }
+  </style>
+
+  <!-- Load Three.js and Official Loaders -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+</head>
+<body>
+
+  <!-- Top Header Navigation -->
+  <header>
+    <div class="brand">
+      <span>🌌 LEOCHERD IRIS ENERGY</span>
+      <span class="brand-badge">3D RIG & MOCAP</span>
+    </div>
+
+    <div class="top-controls">
+      <!-- EXACT ELEMENT AS REQUESTED BY USER -->
+      <label class="custom-file-upload">
+        📂 Upload 3D Model
+        <input type="file" id="fileInput" accept=".glb,.gltf,.obj" />
+      </label>
+
+      <button id="toggle-skeleton" class="btn-toggle active" title="Toggle Luminous Cyan Skeletal Rig (as in reference image)">
+        🦴 Skeleton Rig
+      </button>
+
+      <button id="toggle-wireframe" class="btn-toggle" title="Toggle Mesh Wireframe">
+        🌐 Wireframe
+      </button>
+
+      <button id="toggle-mesh" class="btn-toggle active" title="Toggle Skinned Character Mesh">
+        👤 Character Mesh
+      </button>
+    </div>
+  </header>
+
+  <!-- 3D Viewport Container - EXACT SIZING SPECIFIED BY USER: 100vw x 80vh -->
+  <div id="viewer-container" style="width: 100vw; height: 80vh;">
+    <canvas id="viewport-canvas"></canvas>
+
+    <!-- Drag & Drop Indicator -->
+    <div id="drop-zone">
+      <h2 style="color: var(--cyan); font-weight: 800;">DRAG & DROP 3D MODEL (.GLTF, .GLB, .OBJ)</h2>
+      <p style="color: var(--text-dim);">Release anywhere to analyze skeletal rig and load animations</p>
+    </div>
+
+    <!-- Active Rig Telemetry HUD -->
+    <div class="hud-overlay" id="hud">
+      <div class="hud-title">⚡ SKELETAL RIG TELEMETRY</div>
+      <div class="hud-row"><span>Creature Mesh:</span> <span class="hud-val" id="hud-mesh-name">Loading...</span></div>
+      <div class="hud-row"><span>Articulated Bones:</span> <span class="hud-val" id="hud-bone-count">--</span></div>
+      <div class="hud-row"><span>Skin Vertices:</span> <span class="hud-val" id="hud-vert-count">--</span></div>
+      <div class="hud-row"><span>Polygonal Faces:</span> <span class="hud-val" id="hud-face-count">--</span></div>
+      <div class="hud-row"><span>Active Animation:</span> <span class="hud-val" id="hud-anim-name">None</span></div>
+      <div class="hud-row"><span>Kinematic Rig:</span> <span class="hud-val" style="color: var(--cyan);">Dual Quaternion DQS</span></div>
+    </div>
+
+    <!-- Engine Export Dock -->
+    <div class="export-dock">
+      <button class="export-btn blender" id="btn-export-blender" title="Export to Blender Production .blend">
+        <span>🟧</span> Export for Blender (.blend)
+      </button>
+      <button class="export-btn unity" id="btn-export-unity" title="Export Unity Humanoid Avatar">
+        <span>🟦</span> Export for Unity (glTF)
+      </button>
+      <button class="export-btn unreal" id="btn-export-unreal" title="Export Unreal Engine 5 Control Rig">
+        <span>🟪</span> Export for Unreal (.fbx)
+      </button>
+      <button class="export-btn" id="btn-export-bvh" title="Download Biovision Hierarchy Motion Capture">
+        <span>🟩</span> Download Mocap (.bvh)
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Playback Dock -->
+  <footer>
+    <div class="timeline-container">
+      <input type="range" id="timeSlider" class="time-slider" min="0" max="100" value="0" step="0.1" />
+      <div class="time-display" id="timeDisplay">0.00s / 0.00s</div>
+    </div>
+
+    <div class="playback-controls">
+      <div class="control-group">
+        <button id="btnPlayPause" class="btn-action">▶ PLAY</button>
+        <button id="btnReset" class="btn-secondary">⏮ RESET</button>
+        <button id="btnLoop" class="btn-secondary active">🔁 LOOP: ON</button>
+      </div>
+
+      <div class="control-group">
+        <span style="font-size: 0.8rem; color: var(--text-dim);">SPEED:</span>
+        <select id="speedSelect" class="speed-select">
+          <option value="0.25">0.25x</option>
+          <option value="0.5">0.5x</option>
+          <option value="1.0" selected>1.0x (Normal)</option>
+          <option value="1.5">1.5x</option>
+          <option value="2.0">2.0x</option>
+        </select>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // --- 3D Scene Initialization ---
+    const container = document.getElementById('viewer-container');
+    const canvas = document.getElementById('viewport-canvas');
+    let scene, camera, renderer, controls;
+    let currentModel = null;
+    let skeletonHelper = null;
+    let customBoneMeshes = [];
+    let mixer = null;
+    let activeAction = null;
+    let clock = new THREE.Clock();
+    let isPlaying = false;
+    let isLooping = true;
+    let animDuration = 0;
+    let isUserScrubbing = false;
+
+    function initScene() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0a0c10);
+      scene.fog = new THREE.FogExp2(0x0a0c10, 0.08);
+
+      camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+      camera.position.set(0, 1.4, 3.2);
+
+      renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.1;
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.target.set(0, 0.9, 0);
+
+      // Studio Lighting
+      const hemiLight = new THREE.HemisphereLight(0xffffff, 0x141824, 0.6);
+      scene.add(hemiLight);
+
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      keyLight.position.set(3, 5, 4);
+      keyLight.castShadow = true;
+      keyLight.shadow.mapSize.width = 2048;
+      keyLight.shadow.mapSize.height = 2048;
+      scene.add(keyLight);
+
+      const fillLight = new THREE.DirectionalLight(0x0099ff, 0.5);
+      fillLight.position.set(-4, 2, -3);
+      scene.add(fillLight);
+
+      const rimLight = new THREE.DirectionalLight(0x00ffcc, 0.8);
+      rimLight.position.set(0, 4, -4);
+      scene.add(rimLight);
+
+      // Floor Grid & Shadow Plane
+      const grid = new THREE.GridHelper(20, 40, 0x00ffcc, 0x1a2636);
+      grid.position.y = 0;
+      scene.add(grid);
+
+      const floorGeo = new THREE.PlaneGeometry(25, 25);
+      const floorMat = new THREE.ShadowMaterial({ opacity: 0.4 });
+      const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+      floorMesh.rotation.x = -Math.PI / 2;
+      floorMesh.receiveShadow = true;
+      scene.add(floorMesh);
+
+      window.addEventListener('resize', onWindowResize);
+    }
+
+    function onWindowResize() {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    // --- Octahedral Glowing Cyan Bone Visualizer (Matching User's Reference Image) ---
+    function buildGlowingCyanArmature(rootNode) {
+      // Remove any existing bone visualizers
+      customBoneMeshes.forEach(m => scene.remove(m));
+      customBoneMeshes = [];
+
+      const joints = [];
+      const bones = [];
+
+      rootNode.traverse(node => {
+        if (node.isBone) {
+          joints.push(node);
+          if (node.children) {
+            node.children.forEach(child => {
+              if (child.isBone) {
+                bones.push({ parent: node, child: child });
+              }
+            });
+          }
+        }
+      });
+
+      // Luminous Cyan Materials
+      const jointMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+      const boneMat = new THREE.MeshStandardMaterial({
+        color: 0x00ffcc,
+        emissive: 0x00ffcc,
+        emissiveIntensity: 0.7,
+        transparent: true,
+        opacity: 0.85,
+        wireframe: false,
+        roughness: 0.2,
+      });
+
+      // Sphere geometry for joints
+      const jointGeo = new THREE.SphereGeometry(0.016, 12, 12);
+      joints.forEach(j => {
+        const mesh = new THREE.Mesh(jointGeo, jointMat);
+        j.add(mesh);
+        customBoneMeshes.push(mesh);
+      });
+
+      // Octahedral / faceted bone links
+      bones.forEach(({ parent, child }) => {
+        const p1 = new THREE.Vector3();
+        const p2 = new THREE.Vector3();
+        parent.getWorldPosition(p1);
+        child.getWorldPosition(p2);
+        const len = p1.distanceTo(p2);
+        if (len < 0.001) return;
+
+        // Create diamond / octahedral bone geometry
+        const boneRadius = Math.max(0.015, Math.min(0.04, len * 0.15));
+        const geom = new THREE.ConeGeometry(boneRadius, len, 4);
+        geom.translate(0, len / 2, 0);
+        geom.rotateX(Math.PI / 2);
+
+        const boneMesh = new THREE.Mesh(geom, boneMat);
+        scene.add(boneMesh);
+        customBoneMeshes.push(boneMesh);
+
+        // Store reference for per-frame update
+        boneMesh.userData = { parent, child, len };
+      });
+    }
+
+    function updateGlowingBones() {
+      customBoneMeshes.forEach(mesh => {
+        if (mesh.userData && mesh.userData.parent && mesh.userData.child) {
+          const p1 = new THREE.Vector3();
+          const p2 = new THREE.Vector3();
+          mesh.userData.parent.getWorldPosition(p1);
+          mesh.userData.child.getWorldPosition(p2);
+          const len = p1.distanceTo(p2);
+
+          mesh.position.copy(p1);
+          mesh.lookAt(p2);
+          mesh.scale.set(1, 1, len / (mesh.userData.len || 1e-4));
+        }
+      });
+    }
+
+    // --- Model Loading & Setup ---
+    function loadModelData(buffer, filename) {
+      if (currentModel) {
+        scene.remove(currentModel);
+        currentModel = null;
+      }
+      if (skeletonHelper) {
+        scene.remove(skeletonHelper);
+        skeletonHelper = null;
+      }
+      customBoneMeshes.forEach(m => scene.remove(m));
+      customBoneMeshes = [];
+
+      const ext = filename.split('.').pop().toLowerCase();
+      document.getElementById('hud-mesh-name').textContent = filename;
+
+      if (ext === 'gltf' || ext === 'glb') {
+        const loader = new THREE.GLTFLoader();
+        loader.parse(buffer, '', (gltf) => {
+          currentModel = gltf.scene;
+          let boneCount = 0;
+          let vertCount = 0;
+          let faceCount = 0;
+
+          currentModel.traverse((node) => {
+            if (node.isMesh) {
+              node.castShadow = true;
+              node.receiveShadow = true;
+              if (node.geometry) {
+                vertCount += node.geometry.attributes.position.count;
+                if (node.geometry.index) {
+                  faceCount += node.geometry.index.count / 3;
+                }
+              }
+              // Enhanced PBR material with dual-tone lighting
+              if (node.material) {
+                node.material.roughness = 0.45;
+                node.material.metalness = 0.15;
+              }
+            }
+            if (node.isBone) {
+              boneCount++;
+            }
+          });
+
+          scene.add(currentModel);
+
+          // Build luminous cyan skeleton
+          skeletonHelper = new THREE.SkeletonHelper(currentModel);
+          skeletonHelper.material.linewidth = 3;
+          skeletonHelper.material.color = new THREE.Color(0x00ffcc);
+          scene.add(skeletonHelper);
+          buildGlowingCyanArmature(currentModel);
+
+          // Setup Animations
+          if (gltf.animations && gltf.animations.length > 0) {
+            mixer = new THREE.AnimationMixer(currentModel);
+            const clip = gltf.animations[0];
+            activeAction = mixer.clipAction(clip);
+            animDuration = clip.duration;
+            activeAction.play();
+            isPlaying = true;
+            document.getElementById('btnPlayPause').textContent = '⏸ PAUSE';
+            document.getElementById('hud-anim-name').textContent = clip.name || 'Action_01';
+          } else {
+            mixer = null;
+            activeAction = null;
+            animDuration = 0;
+            isPlaying = false;
+            document.getElementById('btnPlayPause').textContent = '▶ PLAY';
+            document.getElementById('hud-anim-name').textContent = 'None (Static)';
+          }
+
+          document.getElementById('hud-bone-count').textContent = boneCount;
+          document.getElementById('hud-vert-count').textContent = vertCount.toLocaleString();
+          document.getElementById('hud-face-count').textContent = Math.round(faceCount).toLocaleString();
+
+          // Auto-frame camera
+          frameCameraToModel(currentModel);
+        });
+      } else if (ext === 'obj') {
+        const text = new TextDecoder().decode(buffer);
+        const loader = new THREE.OBJLoader();
+        currentModel = loader.parse(text);
+        currentModel.traverse((node) => {
+          if (node.isMesh) {
+            node.castShadow = true;
+            node.receiveShadow = true;
+            node.material = new THREE.MeshStandardMaterial({
+              color: 0x8899aa,
+              roughness: 0.5,
+              metalness: 0.1,
+            });
+          }
+        });
+        scene.add(currentModel);
+        document.getElementById('hud-bone-count').textContent = '0 (Unrigged OBJ)';
+        document.getElementById('hud-anim-name').textContent = 'None';
+        frameCameraToModel(currentModel);
+      }
+    }
+
+    function frameCameraToModel(model) {
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = camera.fov * (Math.PI / 180);
+      let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
+      camera.position.set(center.x, center.y + size.y * 0.2, cameraZ);
+      controls.target.copy(center);
+      controls.update();
+    }
+
+    // --- File Input Listener (EXACT ID AS REQUESTED) ---
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        loadModelData(event.target.result, file.name);
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    // --- Drag and Drop Handling ---
+    const dropZone = document.getElementById('drop-zone');
+    container.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('active');
+    });
+    container.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('active');
+    });
+    container.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('active');
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          loadModelData(event.target.result, file.name);
+        };
+        reader.readAsArrayBuffer(file);
+      }
+    });
+
+    // --- UI Controls & Toggles ---
+    document.getElementById('toggle-skeleton').addEventListener('click', function() {
+      this.classList.toggle('active');
+      const visible = this.classList.contains('active');
+      if (skeletonHelper) skeletonHelper.visible = visible;
+      customBoneMeshes.forEach(m => m.visible = visible);
+    });
+
+    document.getElementById('toggle-wireframe').addEventListener('click', function() {
+      this.classList.toggle('active');
+      const wf = this.classList.contains('active');
+      if (currentModel) {
+        currentModel.traverse(node => {
+          if (node.isMesh && node.material) {
+            node.material.wireframe = wf;
+          }
+        });
+      }
+    });
+
+    document.getElementById('toggle-mesh').addEventListener('click', function() {
+      this.classList.toggle('active');
+      const visible = this.classList.contains('active');
+      if (currentModel) {
+        currentModel.traverse(node => {
+          if (node.isMesh) node.visible = visible;
+        });
+      }
+    });
+
+    // --- Playback Controls ---
+    const btnPlayPause = document.getElementById('btnPlayPause');
+    const timeSlider = document.getElementById('timeSlider');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const speedSelect = document.getElementById('speedSelect');
+
+    btnPlayPause.addEventListener('click', () => {
+      if (!activeAction) return;
+      isPlaying = !isPlaying;
+      btnPlayPause.textContent = isPlaying ? '⏸ PAUSE' : '▶ PLAY';
+    });
+
+    document.getElementById('btnReset').addEventListener('click', () => {
+      if (activeAction) {
+        activeAction.time = 0;
+        timeSlider.value = 0;
+        updateTimeDisplay(0);
+      }
+    });
+
+    document.getElementById('btnLoop').addEventListener('click', function() {
+      isLooping = !isLooping;
+      this.textContent = isLooping ? '🔁 LOOP: ON' : '🔁 LOOP: OFF';
+      this.classList.toggle('active', isLooping);
+      if (activeAction) {
+        activeAction.loop = isLooping ? THREE.LoopRepeat : THREE.LoopOnce;
+      }
+    });
+
+    speedSelect.addEventListener('change', (e) => {
+      if (mixer) {
+        mixer.timeScale = parseFloat(e.target.value);
+      }
+    });
+
+    timeSlider.addEventListener('input', (e) => {
+      isUserScrubbing = true;
+      if (activeAction && animDuration > 0) {
+        const time = (parseFloat(e.target.value) / 100) * animDuration;
+        activeAction.time = time;
+        updateTimeDisplay(time);
+      }
+    });
+
+    timeSlider.addEventListener('change', () => {
+      isUserScrubbing = false;
+    });
+
+    function updateTimeDisplay(curTime) {
+      timeDisplay.textContent = `${curTime.toFixed(2)}s / ${animDuration.toFixed(2)}s`;
+    }
+
+    // --- Engine Export Quick-Links ---
+    document.getElementById('btn-export-blender').addEventListener('click', () => {
+      window.location.href = '/api/v1/assets/download/blender';
+    });
+    document.getElementById('btn-export-unity').addEventListener('click', () => {
+      window.location.href = '/api/v1/assets/download/gltf';
+    });
+    document.getElementById('btn-export-unreal').addEventListener('click', () => {
+      window.location.href = '/api/v1/assets/download/fbx';
+    });
+    document.getElementById('btn-export-bvh').addEventListener('click', () => {
+      window.location.href = '/api/v1/assets/download/bvh';
+    });
+
+    // Spacebar to Play/Pause
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        btnPlayPause.click();
+      }
+    });
+
+    // --- Animation Loop ---
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = clock.getDelta();
+
+      if (mixer && isPlaying && !isUserScrubbing) {
+        mixer.update(delta);
+        if (activeAction && animDuration > 0) {
+          const t = activeAction.time % animDuration;
+          timeSlider.value = (t / animDuration) * 100;
+          updateTimeDisplay(t);
+        }
+      }
+
+      if (skeletonHelper && skeletonHelper.visible) {
+        skeletonHelper.update();
+      }
+      updateGlowingBones();
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    // Initialize Viewport
+    initScene();
+    animate();
+
+    // Try loading latest reconstruction glTF if available (prioritize creature reconstruction)
+    fetch('/outputs/creature_dwarf/creature_rigged.gltf')
+      .then(res => {
+        if (!res.ok) throw new Error('creature_dwarf not found');
+        return res.arrayBuffer();
+      })
+      .then(buf => loadModelData(buf, 'creature_rigged.gltf'))
+      .catch(() => {
+        fetch('/outputs/dance_fixed/reconstruction_77bd452d.gltf')
+          .then(res => res.arrayBuffer())
+          .then(buf => loadModelData(buf, 'reconstruction_77bd452d.gltf'))
+          .catch(() => {
+            console.log('No default reconstruction glTF found on local server; ready for user upload.');
+          });
+      });
+  </script>
+</body>
+</html>

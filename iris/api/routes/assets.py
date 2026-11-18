@@ -50,6 +50,8 @@ def download_asset(job_id: str, fmt: str):
     settings = get_settings()
     out_dir = settings.outputs_dir / job_id
     fmt_clean = fmt.lower().lstrip(".")
+    if fmt_clean == "blender":
+        fmt_clean = "blend"
 
     target_files = list(out_dir.glob(f"*.{fmt_clean}"))
     if not target_files:
@@ -61,3 +63,33 @@ def download_asset(job_id: str, fmt: str):
         filename=file_to_send.name,
         media_type="application/octet-stream",
     )
+
+
+@router.get("/assets/download/{fmt}")
+def download_latest_asset(fmt: str, job: str | None = None):
+    settings = get_settings()
+    fmt_clean = fmt.lower().lstrip(".")
+    if fmt_clean == "blender":
+        fmt_clean = "blend"
+
+    search_dirs = []
+    if job:
+        search_dirs.append(settings.outputs_dir / job)
+    else:
+        # Prioritize newest modified directories
+        all_dirs = [d for d in settings.outputs_dir.iterdir() if d.is_dir()]
+        all_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+        search_dirs = all_dirs
+
+    for d in search_dirs:
+        candidates = list(d.glob(f"*.{fmt_clean}"))
+        if candidates:
+            file_to_send = candidates[0]
+            return FileResponse(
+                path=str(file_to_send),
+                filename=file_to_send.name,
+                media_type="application/octet-stream",
+            )
+
+    raise HTTPException(status_code=404, detail=f"No asset found with format '{fmt_clean}'")
+

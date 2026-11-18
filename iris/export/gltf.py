@@ -145,7 +145,7 @@ class GltfExporter(BaseAssetExporter):
 
         # 2a. Timestamps accessor (5126 = FLOAT)
         T = animation.frame_count
-        times = animation.timestamps.astype(np.float32)
+        times = np.asarray(animation.timestamps, dtype=np.float32)
         times_bytes = times.tobytes()
         time_acc_idx = add_buffer_data(
             times_bytes,
@@ -160,7 +160,7 @@ class GltfExporter(BaseAssetExporter):
         samplers = []
 
         # 2b. Root translation animation
-        root_trans = animation.root_translations.astype(np.float32)
+        root_trans = np.asarray(animation.root_translations, dtype=np.float32)
         root_trans_bytes = root_trans.tobytes()
         min_root = [float(np.min(root_trans[:, d])) for d in range(3)] if T > 0 else [0.0, 0.0, 0.0]
         max_root = [float(np.max(root_trans[:, d])) for d in range(3)] if T > 0 else [0.0, 0.0, 0.0]
@@ -435,3 +435,7 @@ class GltfExporter(BaseAssetExporter):
 
         logger.info(f"Successfully generated glTF 2.0 asset ({len(nodes)} nodes, {len(channels)} animation tracks)")
         return out_file
+
+
+# Alias for backward/forward compatibility
+GLTFExporter = GltfExporter

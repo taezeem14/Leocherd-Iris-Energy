@@ -197,6 +197,7 @@ def apply_animation(armature_obj, anim_data):
         rotations_dict = anim_data["rotations"]
         root_trans_list = anim_data["root_translations"]
 
+        total_baked = num_frames
         bpy.context.scene.frame_start = 1
         bpy.context.scene.frame_end = max(1, num_frames)
         print(f"[*] Baking {num_frames} keyframes into Action '{action_name}' @ {fps:.1f} FPS...")
@@ -222,6 +223,7 @@ def apply_animation(armature_obj, anim_data):
                     root_bone.keyframe_insert(data_path="location", frame=f_num)
     else:
         frames = anim_data.get("frames", [])
+        total_baked = len(frames)
         bpy.context.scene.frame_start = 1
         bpy.context.scene.frame_end = max(1, len(frames))
 
@@ -247,7 +249,7 @@ def apply_animation(armature_obj, anim_data):
                     root_bone.keyframe_insert(data_path="location", frame=frame_idx)
 
     bpy.ops.object.mode_set(mode="OBJECT")
-    print(f"[OK] Animation keyframes successfully baked across {len(frames)} frames.")
+    print(f"[OK] Animation keyframes successfully baked across {total_baked} frames.")
 
 
 def main():

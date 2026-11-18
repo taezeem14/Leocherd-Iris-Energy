@@ -20,6 +20,8 @@ Designed for high-end animation in **Blender**, **Maya**, **Unity**, **Unreal En
 - [Key Technical Capabilities](#-key-technical-capabilities)
 - [System Architecture](#️-system-architecture)
 - [Installation & Setup](#-installation--setup)
+- [Interactive WebGL 3D Viewer & Rig Studio](#-interactive-webgl-3d-viewer--rig-studio)
+- [2D Creature Image-to-3D Skinned Rig Pipeline](#-2d-creature-image-to-3d-skinned-rig-pipeline)
 - [Full Step-by-Step Tutorial](#-full-step-by-step-tutorial)
   - [1. Inspect Video Metadata](#1-inspect-video-metadata)
   - [2. Local Video Reconstruction (CPU / ONNX)](#2-local-video-reconstruction-cpu--onnx)
@@ -29,7 +31,7 @@ Designed for high-end animation in **Blender**, **Maya**, **Unity**, **Unreal En
   - [6. Dual Quaternion Skinning (DQS) vs LBS](#6-dual-quaternion-skinning-dqs-vs-lbs)
   - [7. Inverse Kinematics (Two-Bone & FABRIK)](#7-inverse-kinematics-two-bone--fabrik)
   - [8. Cross-Morphology Motion Retargeting](#8-cross-morphology-motion-retargeting)
-  - [9. Production 3D Export & Engine Usage](#9-production-3d-export--engine-usage)
+  - [9. Production 3D Export & Engine Usage (Blender, Unity, Unreal)](#9-production-3d-export--engine-usage-blender-unity-unreal)
   - [10. Running the FastAPI REST Microservice](#10-running-the-fastapi-rest-microservice)
 - [CLI Reference](#-cli-reference)
 - [Automated Testing & Verification](#-automated-testing--verification)
@@ -139,6 +141,65 @@ Verify that your CPU, memory, and acceleration libraries are recognized:
 ```bash
 python main.py diagnostics
 ```
+
+---
+
+## 🖥️ Interactive WebGL 3D Viewer & Rig Studio
+
+Iris Energy includes an interactive WebGL 3D viewer featuring full Three.js orbit controls, glowing cyan skeletal bone overlays (matching anatomical diamond armatures), timeline playback scrubbing, wireframe/mesh toggling, and instant 1-click engine export downloads.
+
+### Launching the Viewer
+Launch the local web server and automatically open the viewer in your default browser:
+```bash
+python main.py view
+```
+Or navigate directly to:
+👉 **`http://127.0.0.1:8000/viewer`**
+
+### Interface Specifications
+The viewer includes the DOM elements for 3D model inspection:
+```html
+<input type="file" id="fileInput" accept=".glb,.gltf,.obj" />
+<div id="viewer-container" style="width: 100vw; height: 80vh;"></div>
+```
+
+- **Drag-and-Drop & File Picker**: Load any `.gltf`, `.glb`, or `.obj` model directly.
+- **Luminous Cyan Armature Overlay**: Visualizes the articulated skeletal hierarchy with faceted octahedral bones and spherical joint nodes (as seen in the reference HUD).
+- **Timeline & Transport**: Scrub animations frame-by-frame, play/pause (with Spacebar shortcut), toggle loop mode, and control speed (0.25x to 2.0x).
+- **1-Click Engine Export Dock**: Direct browser download buttons for Blender (`.blend`), Unity (`.gltf`), Unreal Engine (`.fbx`), and Biovision Hierarchy (`.bvh`).
+
+---
+
+## 🎨 2D Creature Image-to-3D Skinned Rig Pipeline
+
+Turn any 2D concept art or creature illustration (such as a dwarven warrior, barbarian brute, fantasy beast, or human character) into a rigged, textured, and animated 3D character asset ready for production game engines.
+
+### How it Works:
+1. **Silhouette & Morphology Analysis**: `CreatureImageAnalyzer` computes vertical mass cross-sections, head-to-body ratios, shoulder/torso width, and limb thickness to automatically classify morphology (e.g. `Brute / Dwarf Heavy Biped` vs `Standard Humanoid`).
+2. **Proportional Skeleton Generation**: `CreatureRigBuilder` constructs an articulated skeletal hierarchy whose rest pose and bone lengths conform to the 2D character's shape.
+3. **Primary Skinned Mesh Generation**: `CreatureSkinnedMeshGenerator` constructs a watertight polygonal 3D mesh with cylindrical-planar UV coordinates and calculates 4-influence Dual Quaternion skin weights.
+4. **Motion Retargeting**: Retargets any motion capture sequence (e.g. 400+ frames of dance, walking, or combat motion) onto the creature's bone hierarchy.
+5. **Headless Blender 4.2.3 LTS Baking**: Runs portable Blender 4.2.3 LTS on Drive D (`D:\blender\blender-4.2.3-windows-x64\blender.exe`) to generate production `.blend` and `.fbx` assets.
+
+### Run Creature Reconstruction via CLI:
+```bash
+python main.py creature-reconstruct data/samples/creature_reference.jpg \
+  --animation outputs/dance_fixed/reconstruction_77bd452d_anim_data.json \
+  --output-dir outputs/creature_dwarf \
+  --formats gltf,blend,fbx,bvh
+```
+
+### Generated Production Assets in `outputs/creature_dwarf/`:
+| Asset File | Format | Target Engine | Purpose |
+| :--- | :--- | :--- | :--- |
+| `creature_rigged.blend` | `.blend` | **Blender 4.2+** | Full armature + automatic skin weights + baked NLA action |
+| `creature_rigged.fbx` | `.fbx` | **Unreal Engine 5** | Skeletal mesh with standard bone names for UE5 Control Rig |
+| `creature_rigged.gltf` | `.gltf` | **Unity / WebGL** | Humanoid/Generic Avatar compliant with PBR texture map |
+| `creature_animation.bvh` | `.bvh` | **Maya / MotionBuilder** | Standard Biovision motion capture recording |
+| `creature_mesh.obj` | `.obj` | **ZBrush / Substance** | Watertight base mesh with UV coordinates |
+| `creature_diffuse.png` | `.png` | **Texture Map** | Diffuse texture extracted from 2D concept art |
+
+---
 
 ---
 
@@ -390,6 +451,16 @@ result = UnityRigProfile.validate("outputs/my_walk_run/reconstruction_skinned_wa
 print(result.summary())
 ```
 
+#### Importing into Unreal Engine 5 (UE5)
+1. In your UE5 Content Browser, click **Import** and select the exported `.fbx` (e.g. `outputs/creature_dwarf/creature_rigged.fbx`).
+2. In the **FBX Import Options**:
+   - Check **Import Mesh** and **Import Skeleton** (or select the UE5 Mannequin skeleton if retargeting).
+   - Check **Import Animations** and ensure Animation Length is set to **Exported Time**.
+   - Under Material, set Material Import Method to **Create New Materials** and assign the `creature_diffuse.png`.
+3. Click **Import All**.
+4. Double-click the generated **Skeletal Mesh** or **Animation Sequence** in Unreal Engine to preview your creature in motion with full physics and IK support.
+
+
 ---
 
 ### 10. Running the FastAPI REST Microservice
@@ -413,15 +484,32 @@ python main.py run-server --host 127.0.0.1 --port 8000 --reload
 ## 🛠️ CLI Reference
 
 ```
-usage: iris [-h] {inspect-video,reconstruct,import-kaggle,run-server,diagnostics} ...
+usage: iris [-h] {inspect-video,reconstruct,creature-reconstruct,import-kaggle,view,run-server,diagnostics} ...
 
 Commands:
-  inspect-video    Inspect video metadata, resolution, FPS, and container health.
-  reconstruct      Run end-to-end 3D rigging and reconstruction from video.
-  import-kaggle    Generate 3D rigs and animation from Kaggle GPU exported JSON.
-  run-server       Launch the FastAPI REST service.
-  diagnostics      Run system hardware and environment diagnostics.
+  inspect-video          Inspect video metadata, resolution, FPS, and container health.
+  reconstruct            Run end-to-end 3D rigging and reconstruction from video.
+  creature-reconstruct   Reconstruct 3D skinned mesh and rig from 2D creature concept image.
+  import-kaggle          Generate 3D rigs and animation from Kaggle GPU exported JSON.
+  view                   Launch WebGL 3D viewer and open in browser.
+  run-server             Launch the FastAPI REST service.
+  diagnostics            Run system hardware and environment diagnostics.
 ```
+
+### Options for `creature-reconstruct`:
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `image_path` | *(required)* | Path to 2D creature image (`.png`, `.jpg`, `.webp`). |
+| `--animation` | `None` | Path to motion capture animation JSON file to retarget. |
+| `--output-dir` | `outputs/creature` | Output directory for all 3D assets. |
+| `--formats` | `gltf,blend,fbx,bvh` | Comma-separated list of formats to export. |
+
+### Options for `view`:
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `--host` | `127.0.0.1` | Host address to bind the web server. |
+| `--port` | `8000` | Port number to bind the web server. |
+| `--no-browser` | `False` | Launch server without automatically opening the browser. |
 
 ### Options for `reconstruct`:
 | Flag | Short | Default | Description |

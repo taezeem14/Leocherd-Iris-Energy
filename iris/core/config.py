@@ -88,6 +88,8 @@ class Settings(BaseSettings):
             found_b = shutil.which("blender")
             if not found_b and platform.system() == "Windows":
                 for b_cand in [
+                    r"D:\blender\blender-4.2.3-windows-x64\blender.exe",
+                    r"D:\blender\blender.exe",
                     r"C:\Program Files\Blender Foundation\Blender 4.2\blender.exe",
                     r"C:\Program Files\Blender Foundation\Blender 4.1\blender.exe",
                     r"C:\Program Files\Blender Foundation\Blender 4.0\blender.exe",
