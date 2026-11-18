@@ -262,7 +262,7 @@ class CreatureSkinnedMeshGenerator:
         texture_img: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Generates 3D vertices, normals, UVs, faces, joint indices, and weights.
+        Generates a single connected humanoid mannequin mesh with proper topology.
         Returns:
             vertices: (V, 3) float32
             normals: (V, 3) float32
@@ -271,28 +271,26 @@ class CreatureSkinnedMeshGenerator:
             joint_indices: (V, 4) uint16
             joint_weights: (V, 4) float32
         """
-        # Generate base procedural proxy mesh matching the custom skeleton
-        v, n, f, ji, jw = ProxyMeshGenerator._generate_procedural_mesh_components(skeleton)
+        # Use the connected mannequin generator (torso + head + neck + limbs as one mesh)
+        # instead of per-bone capsules which produce disconnected body parts
+        v, n, f, ji, jw = ProxyMeshGenerator.create_skinned_mannequin(skeleton)
 
-        # Scale mesh vertices outward based on creature bulk factor (broad chest, thick armor, heavy boots)
+        # Scale mesh vertices outward based on creature bulk factor
         bulk = profile.bulk_factor
         if bulk != 1.0:
-            # Expand horizontally (X and Z) around local bone axes
-            v[:, 0] *= float(bulk * 1.1)  # Wider shoulders and stance
-            v[:, 2] *= float(bulk * 1.05) # Deeper ribcage and torso
-            # Recompute normals
+            v[:, 0] *= float(bulk * 1.1)
+            v[:, 2] *= float(bulk * 1.05)
             n[:, 0] *= float(bulk)
             n[:, 2] *= float(bulk)
             norms = np.linalg.norm(n, axis=1, keepdims=True)
             n = np.where(norms > 1e-6, n / norms, n)
 
-        # Compute cylindrical-planar projective UV coordinates from bounding box
+        # Compute cylindrical-planar projective UV coordinates
         min_v = v.min(axis=0)
         max_v = v.max(axis=0)
         span_v = np.maximum(max_v - min_v, 1e-4)
 
         u = np.clip((v[:, 0] - min_v[0]) / span_v[0], 0.0, 1.0)
-        # Flip Y for standard image UV
         v_coord = np.clip(1.0 - (v[:, 1] - min_v[1]) / span_v[1], 0.0, 1.0)
         uvs = np.column_stack([u, v_coord]).astype(np.float32)
 
@@ -446,7 +444,7 @@ class CreatureReconstructionPipeline:
                 skeleton=skeleton,
                 animation=animation,
                 output_path=gltf_path,
-                mesh_override=(verts, normals, faces, joint_idx, joint_weights),
+                mesh=(verts, normals, faces, joint_idx, joint_weights),
             )
             exported_files["gltf"] = str(gltf_path)
             logger.info(f"Exported Unity/WebGL glTF to: {gltf_path}")
