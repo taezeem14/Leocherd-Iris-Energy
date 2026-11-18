@@ -461,6 +461,17 @@ class GltfStrictValidator:
                                     f"Mesh {m_idx} Prim {p_idx}: joint index exceeds skin joints count ({skin_joint_count})"
                                 )
 
+                        # 6. Duplicate Joint Indices Check (ACCESSOR_JOINTS_INDEX_DUPLICATE)
+                        for v_i in range(len(j_arr)):
+                            non_zero_k = [k for k in range(4) if w_arr[v_i, k] > 1e-5]
+                            active_joints = [j_arr[v_i, k] for k in non_zero_k]
+                            if len(active_joints) != len(set(active_joints)):
+                                errors.append(
+                                    f"Mesh {m_idx} Prim {p_idx} Vertex {v_i}: duplicate joint index detected in JOINTS_0 "
+                                    f"(ACCESSOR_JOINTS_INDEX_DUPLICATE: {active_joints})"
+                                )
+                                break
+
         stats["total_vertices"] = total_verts
         stats["total_faces"] = total_faces
 

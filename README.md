@@ -189,6 +189,13 @@ python main.py creature-reconstruct data/samples/creature_reference.jpg \
   --formats gltf,blend,fbx,bvh
 ```
 
+### Key Skinned Rig Capabilities:
+- **3D Octahedral / Diamond Bones**: Articulated faceted diamond bones with specular highlights connecting each anatomical joint (spine, chest, clavicles, arms, forearms, pelvic arch, thighs, shins, feet).
+- **Spherical Cyan Joint Beads**: Luminous spherical beads at all articulation nodes (head, neck, chest, spine, hips, shoulders, elbows, wrists, knees, ankles).
+- **Anatomical Fist Knuckle Rays & Head Crest**: Faithfully reproduces the clenched-fist knuckle rays and mohawk head crest directly from reference concept art.
+- **Strict Khronos glTF-Validator 2.0 Conformance**: Guaranteed 0 `ACCESSOR_JOINTS_INDEX_DUPLICATE` errors, strict partition-of-unity normalized weights ($\sum w_i = 1.0$), and descending influence sorting.
+- **No Blender Installation Required for Preview**: Works on any laptop without dedicated graphics by dragging `.gltf` into [gltf-viewer.donmccurdy.com](https://gltf-viewer.donmccurdy.com/) or launching `python main.py view`.
+
 ### Generated Production Assets in `outputs/creature_dwarf/`:
 | Asset File | Format | Target Engine | Purpose |
 | :--- | :--- | :--- | :--- |

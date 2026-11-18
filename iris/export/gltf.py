@@ -283,21 +283,34 @@ class GltfExporter(BaseAssetExporter):
                 norms = np.asarray(norms, dtype=np.float32)
 
             # Sanitize weights and indices for strict glTF conformance:
-            # 1. Sort influences descending per vertex
-            order = np.argsort(-j_weights, axis=1)
-            row_idx = np.arange(len(j_weights))[:, None]
-            j_weights = j_weights[row_idx, order]
-            j_indices = j_indices[row_idx, order]
+            # 1. Merge duplicate joint indices per vertex
+            # 2. Sort influences strictly descending by weight
+            # 3. Normalize weights to sum exactly to 1.0
+            # 4. Enforce zero-weight influence sanitization (w == 0 => j == 0)
+            V = len(j_weights)
+            clean_joint_indices = np.zeros((V, 4), dtype=np.uint16)
+            clean_joint_weights = np.zeros((V, 4), dtype=np.float32)
 
-            # 2. Normalize sum to exactly 1.0
-            w_sums = np.sum(j_weights, axis=1, keepdims=True)
-            w_sums[w_sums < 1e-6] = 1.0
-            j_weights = (j_weights / w_sums).astype(np.float32)
+            for v_idx in range(V):
+                joint_map: Dict[int, float] = {}
+                for k in range(4):
+                    w = float(j_weights[v_idx, k])
+                    j = int(j_indices[v_idx, k])
+                    if w > 1e-5:
+                        joint_map[j] = joint_map.get(j, 0.0) + w
 
-            # 3. Zero out insignificant weights and reset joint index to 0
-            zero_mask = j_weights <= 1e-6
-            j_weights[zero_mask] = 0.0
-            j_indices[zero_mask] = 0
+                sorted_pairs = sorted(joint_map.items(), key=lambda p: p[1], reverse=True)
+                total_w = sum(p[1] for p in sorted_pairs[:4])
+                if total_w < 1e-6:
+                    clean_joint_weights[v_idx, 0] = 1.0
+                    clean_joint_indices[v_idx, 0] = 0
+                else:
+                    for k, (j, w) in enumerate(sorted_pairs[:4]):
+                        clean_joint_weights[v_idx, k] = float(w / total_w)
+                        clean_joint_indices[v_idx, k] = int(j)
+
+            j_indices = clean_joint_indices
+            j_weights = clean_joint_weights
         else:
             from iris.rigging.proxy_mesh import ProxyMeshGenerator
             verts, norms, tri_indices, j_indices, j_weights = ProxyMeshGenerator.create_skinned_mannequin(skeleton)

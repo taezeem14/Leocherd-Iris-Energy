@@ -303,29 +303,44 @@ class CreatureSkeletalFigureGenerator:
         v5 = p_end
         verts = np.array([v0, v1, v2, v3, v4, v5], dtype=np.float32)
 
-        ji = np.array(
-            [
-                [j_parent, 0, 0, 0],
-                [j_parent, j_child, 0, 0],
-                [j_parent, j_child, 0, 0],
-                [j_parent, j_child, 0, 0],
-                [j_parent, j_child, 0, 0],
-                [j_child, 0, 0, 0],
-            ],
-            dtype=np.uint16,
-        )
+        if j_parent == j_child:
+            ji = np.zeros((6, 4), dtype=np.uint16)
+            ji[:, 0] = j_parent
+            jw = np.zeros((6, 4), dtype=np.float32)
+            jw[:, 0] = 1.0
+        else:
+            w_p = float(max(0.0, min(1.0, 1.0 - bulge_t)))
+            w_c = float(max(0.0, min(1.0, bulge_t)))
+            if w_p >= w_c:
+                mid_ji = [j_parent, j_child, 0, 0]
+                mid_jw = [w_p, w_c, 0.0, 0.0]
+            else:
+                mid_ji = [j_child, j_parent, 0, 0]
+                mid_jw = [w_c, w_p, 0.0, 0.0]
 
-        jw = np.array(
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [1.0 - bulge_t, bulge_t, 0.0, 0.0],
-                [1.0 - bulge_t, bulge_t, 0.0, 0.0],
-                [1.0 - bulge_t, bulge_t, 0.0, 0.0],
-                [1.0 - bulge_t, bulge_t, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-            ],
-            dtype=np.float32,
-        )
+            ji = np.array(
+                [
+                    [j_parent, 0, 0, 0],
+                    mid_ji,
+                    mid_ji,
+                    mid_ji,
+                    mid_ji,
+                    [j_child, 0, 0, 0],
+                ],
+                dtype=np.uint16,
+            )
+
+            jw = np.array(
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    mid_jw,
+                    mid_jw,
+                    mid_jw,
+                    mid_jw,
+                    [1.0, 0.0, 0.0, 0.0],
+                ],
+                dtype=np.float32,
+            )
 
         faces = np.array(
             [
