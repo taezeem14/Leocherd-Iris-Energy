@@ -208,14 +208,25 @@ def apply_animation(armature_obj, anim_data):
         print(f"[*] Baking {num_frames} keyframes into Action '{action_name}' @ {fps:.1f} FPS...")
 
         pose_bones = armature_obj.pose.bones
+
+        def find_pose_bone(name: str):
+            if name in pose_bones:
+                return pose_bones[name]
+            for pb in pose_bones:
+                if pb.name == f"Bone_{name}" or pb.name.endswith(f"_{name}"):
+                    return pb
+                if name.endswith(f"_{pb.name}") or name == f"Bone_{pb.name}":
+                    return pb
+            return None
+
         for frame_idx in range(num_frames):
             f_num = frame_idx + 1
             bpy.context.scene.frame_set(f_num)
 
             for bone_name, track in rotations_dict.items():
-                if bone_name in pose_bones and frame_idx < len(track):
+                p_bone = find_pose_bone(bone_name)
+                if p_bone and frame_idx < len(track):
                     q = track[frame_idx]
-                    p_bone = pose_bones[bone_name]
                     p_bone.rotation_mode = "QUATERNION"
                     p_bone.rotation_quaternion = mathutils.Quaternion((q[0], q[1], -q[3], q[2]))
                     p_bone.keyframe_insert(data_path="rotation_quaternion", frame=f_num)
@@ -235,13 +246,24 @@ def apply_animation(armature_obj, anim_data):
         print(f"[*] Baking {len(frames)} keyframes into Action '{action_name}' @ {fps:.1f} FPS...")
 
         pose_bones = armature_obj.pose.bones
+
+        def find_pose_bone(name: str):
+            if name in pose_bones:
+                return pose_bones[name]
+            for pb in pose_bones:
+                if pb.name == f"Bone_{name}" or pb.name.endswith(f"_{name}"):
+                    return pb
+                if name.endswith(f"_{pb.name}") or name == f"Bone_{pb.name}":
+                    return pb
+            return None
+
         for frame_idx, f_data in enumerate(frames, start=1):
             bpy.context.scene.frame_set(frame_idx)
             rotations = f_data.get("rotations", {})
 
             for bone_name, q in rotations.items():
-                if bone_name in pose_bones:
-                    p_bone = pose_bones[bone_name]
+                p_bone = find_pose_bone(bone_name)
+                if p_bone:
                     p_bone.rotation_mode = "QUATERNION"
                     p_bone.rotation_quaternion = mathutils.Quaternion((q[0], q[1], -q[3], q[2]))
                     p_bone.keyframe_insert(data_path="rotation_quaternion", frame=frame_idx)
@@ -267,17 +289,39 @@ def main():
 
     # 1. Import 3D Mesh
     mesh_obj = None
+    imported_armature = None
     if args.mesh:
         mesh_obj = import_3d_mesh(args.mesh)
+        # Purge any stray helper meshes created by importers (e.g. glTF helper Icospheres)
+        for obj in list(bpy.data.objects):
+            if "icosphere" in obj.name.lower():
+                bpy.data.objects.remove(obj, do_unlink=True)
+        for block in list(bpy.data.meshes):
+            if "icosphere" in block.name.lower():
+                bpy.data.meshes.remove(block)
 
-    # 2. Build Armature
-    with open(args.rig, "r", encoding="utf-8") as f:
-        rig_data = json.load(f)
-    armature_obj = build_armature(rig_data)
+        # Check if mesh import already brought an articulated armature (e.g. from glTF)
+        existing_armatures = [obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE"]
+        if existing_armatures:
+            imported_armature = existing_armatures[0]
+            print(f"[OK] Reusing imported Armature '{imported_armature.name}' from mesh file.")
 
-    # 3. Bind Mesh with Skin Weights
-    if mesh_obj:
+    # 2. Build Armature (only if mesh didn't already have one)
+    if imported_armature:
+        armature_obj = imported_armature
+    else:
+        with open(args.rig, "r", encoding="utf-8") as f:
+            rig_data = json.load(f)
+        armature_obj = build_armature(rig_data)
+
+    # 3. Bind Mesh with Skin Weights (only if not already parented/skinned)
+    if mesh_obj and not imported_armature:
         bind_mesh_to_armature(mesh_obj, armature_obj)
+    elif mesh_obj:
+        # Ensure Dual Quaternion volume preservation on existing armature modifier
+        for mod in mesh_obj.modifiers:
+            if mod.type == "ARMATURE":
+                mod.use_deform_preserve_volume = True
 
     # 4. Apply Animation
     if args.anim and Path(args.anim).exists():
@@ -285,21 +329,39 @@ def main():
             anim_data = json.load(f)
         apply_animation(armature_obj, anim_data)
 
-    # 5. Save Output .blend
+    # 5. Clean scene of any stray objects before saving and exporting
+    for obj in list(bpy.data.objects):
+        if obj.type not in ["ARMATURE", "MESH"] or "icosphere" in obj.name.lower():
+            bpy.data.objects.remove(obj, do_unlink=True)
+    for block in list(bpy.data.meshes):
+        if "icosphere" in block.name.lower():
+            bpy.data.meshes.remove(block)
+
+    # 6. Save Output .blend
     out_blend = Path(args.output).resolve()
     out_blend.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=str(out_blend))
     print(f"[SUCCESS] Saved rigged Blender production scene to: {out_blend}")
 
-    # 6. Optional FBX Export
+    # 7. Clean FBX Export (Mesh and Armature only)
     if args.export_fbx:
         out_fbx = Path(args.export_fbx).resolve()
         out_fbx.parent.mkdir(parents=True, exist_ok=True)
+
+        # Select only active character mesh and armature
+        bpy.ops.object.select_all(action="DESELECT")
+        if mesh_obj:
+            mesh_obj.select_set(True)
+        if armature_obj:
+            armature_obj.select_set(True)
+            bpy.context.view_layer.objects.active = armature_obj
+
         bpy.ops.export_scene.fbx(
             filepath=str(out_fbx),
-            use_selection=False,
+            use_selection=True,
             bake_anim=True,
             add_leaf_bones=False,
+            object_types={"ARMATURE", "MESH"},
         )
         print(f"[SUCCESS] Exported production FBX to: {out_fbx}")
 
