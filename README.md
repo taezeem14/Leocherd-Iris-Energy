@@ -35,6 +35,7 @@ Designed for high-end animation in **Blender**, **Maya**, **Unity**, **Unreal En
   - [10. Running the FastAPI REST Microservice](#10-running-the-fastapi-rest-microservice)
 - [CLI Reference](#-cli-reference)
 - [Automated Testing & Verification](#-automated-testing--verification)
+- [Production Bug Audit & Theoretical Engineering Solutions](#️-production-bug-audit--theoretical-engineering-solutions)
 - [Project Directory Structure](#-project-directory-structure)
 - [License](#-license)
 
@@ -547,11 +548,26 @@ Iris Energy maintains a 100% green, strict automated testing suite with **377 pa
 pytest tests/unit/ tests/e2e/ -v
 
 # Run strict Khronos glTF 2.0 conformance validator
-python scripts/validate_gltf_strict.py outputs/dance_run/reconstruction_7ee71d98.gltf
+python scripts/validate_gltf_strict.py outputs/creature_dwarf/creature_rigged.gltf
 
 # Run the DQS volume preservation benchmark
 pytest tests/unit/test_skinning_dqs.py -k test_dqs_volume_preservation -v
 ```
+
+---
+
+## 🛠️ Production Bug Audit & Theoretical Engineering Solutions
+
+| # | Bug Classification | Affected Component | Theoretical Root Cause & Mathematical Solution |
+|---|-------------------|-------------------|------------------------------------------------|
+| **1** | **Unsanitized Skinning in Default Mesh Export** | [`iris/export/gltf.py`](iris/export/gltf.py) | **Cause**: Skin weight sanitization was conditionally restricted to `if custom_mesh:`. Default mannequin exports bypassed partition-of-unity and influence sorting.<br>**Solution**: $\sum_{k=0}^{M-1} w_{v, k} = 1.0, \quad w_{v, 0} \ge w_{v, 1} \ge \dots \ge w_{v, 3}$. Decoupled sanitizer to run unconditionally across all exported meshes before binary serialization. |
+| **2** | **Zero-Weight Duplicate Joint Indices (Khronos Spec)** | [`iris/export/gltf.py`](iris/export/gltf.py) & [`scripts/validate_gltf_strict.py`](scripts/validate_gltf_strict.py) | **Cause**: Initializing unused joint index slots with `0` caused duplicate indices when joint 0 was also an active influence ($[0, 0, 0, 0]$).<br>**Solution**: All 4 components in `JOINTS_0` must be strictly distinct per vertex. Unused slots ($w=0.0$) are populated with unique valid skeleton indices $c_k \in [0, N-1] \setminus \text{active\_joints}(v)$. |
+| **3** | **Non-Manifold Geometry in Procedural Creature Figure** | [`iris/mesh/creature_rig.py`](iris/mesh/creature_rig.py) | **Cause**: Disconnected open-ended capsule cylinders produced floating segments and non-manifold edges.<br>**Solution**: Continuous octahedral diamond bone lattice with dual-joint linear blending ($w_p = 1 - t, w_c = t$) and spherical joint beads (0 non-manifold edges, 0 degenerate faces). |
+| **4** | **Missing Dual Quaternion Skinning (DQS) in Blender** | [`blender/automate_rig.py`](blender/automate_rig.py) | **Cause**: Default `ARMATURE_AUTO` uses standard LBS without volume preservation (`use_deform_preserve_volume = False`), leading to candy-wrapper limb pinching.<br>**Solution**: Post-parenting modifier pass enforcing `mod.use_deform_preserve_volume = True` on all armature modifiers. |
+| **5** | **Duplicate Armatures on glTF Re-Import** | [`blender/automate_rig.py`](blender/automate_rig.py) | **Cause**: Importing rigged glTFs created scene armatures, followed by redundant secondary armature generation.<br>**Solution**: Inspect scene objects post-import and bind directly to existing imported armatures. |
+| **6** | **Cross-Convention Animation Key Retargeting** | [`iris/mesh/creature_rig.py`](iris/mesh/creature_rig.py) | **Cause**: Bone name mismatch between Kaggle joint-style rotations (`Spine`) and creature rig bone names (`Bone_Spine_Chest`).<br>**Solution**: Dual-key fallback alias resolution mapping both bone identifiers and parent/child joint keys. |
+
+---
 
 ---
 

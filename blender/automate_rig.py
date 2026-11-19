@@ -172,6 +172,11 @@ def bind_mesh_to_armature(mesh_obj, armature_obj):
         mod.object = armature_obj
         mod.use_vertex_groups = True
 
+    # Ensure Dual Quaternion Skinning (DQS) volume preservation is enabled on all armature modifiers
+    for mod in mesh_obj.modifiers:
+        if mod.type == "ARMATURE":
+            mod.use_deform_preserve_volume = True
+
 
 def apply_animation(armature_obj, anim_data):
     """Loads skeletal animation keyframes into a native Blender Action track."""

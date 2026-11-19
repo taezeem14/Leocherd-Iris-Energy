@@ -443,17 +443,7 @@ class GltfStrictValidator:
                                     f"Mesh {m_idx} Prim {p_idx}: weights are not strictly sorted descending at slot {k}"
                                 )
 
-                        # 4. Zero-weight influence sanitization: w == 0 => j == 0
-                        zero_w_mask = w_arr == 0.0
-                        non_zero_j_with_zero_w = (j_arr != 0) & zero_w_mask
-                        zero_w_violations = int(np.sum(non_zero_j_with_zero_w))
-                        if zero_w_violations > 0:
-                            warnings.append(
-                                f"Mesh {m_idx} Prim {p_idx}: found {zero_w_violations} joint influences with zero weight "
-                                f"and non-zero joint index (ACCESSOR_JOINTS_USED_ZERO_WEIGHT)"
-                            )
-
-                        # 5. Joint indices in bounds
+                        # 4. Zero-weight influence check: unused slots (w == 0) must reference valid skin joints
                         if skins:
                             skin_joint_count = len(skins[0].get("joints", []))
                             if np.any(j_arr >= skin_joint_count):
@@ -461,14 +451,14 @@ class GltfStrictValidator:
                                     f"Mesh {m_idx} Prim {p_idx}: joint index exceeds skin joints count ({skin_joint_count})"
                                 )
 
-                        # 6. Duplicate Joint Indices Check (ACCESSOR_JOINTS_INDEX_DUPLICATE)
+                        # 5. Strict Duplicate Joint Indices Check (Khronos ACCESSOR_JOINTS_INDEX_DUPLICATE)
+                        # In glTF 2.0, all 4 joint indices for a given vertex in JOINTS_0 must be unique.
                         for v_i in range(len(j_arr)):
-                            non_zero_k = [k for k in range(4) if w_arr[v_i, k] > 1e-5]
-                            active_joints = [j_arr[v_i, k] for k in non_zero_k]
-                            if len(active_joints) != len(set(active_joints)):
+                            all_v_joints = list(j_arr[v_i])
+                            if len(all_v_joints) != len(set(all_v_joints)):
                                 errors.append(
                                     f"Mesh {m_idx} Prim {p_idx} Vertex {v_i}: duplicate joint index detected in JOINTS_0 "
-                                    f"(ACCESSOR_JOINTS_INDEX_DUPLICATE: {active_joints})"
+                                    f"(ACCESSOR_JOINTS_INDEX_DUPLICATE: {all_v_joints})"
                                 )
                                 break
 

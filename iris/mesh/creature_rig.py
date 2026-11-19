@@ -306,6 +306,9 @@ class CreatureSkeletalFigureGenerator:
         if j_parent == j_child:
             ji = np.zeros((6, 4), dtype=np.uint16)
             ji[:, 0] = j_parent
+            ji[:, 1] = (j_parent + 1) % 17
+            ji[:, 2] = (j_parent + 2) % 17
+            ji[:, 3] = (j_parent + 3) % 17
             jw = np.zeros((6, 4), dtype=np.float32)
             jw[:, 0] = 1.0
         else:
@@ -421,6 +424,9 @@ class CreatureSkeletalFigureGenerator:
         V = len(verts)
         ji = np.zeros((V, 4), dtype=np.uint16)
         ji[:, 0] = j_idx
+        ji[:, 1] = (j_idx + 1) % 17
+        ji[:, 2] = (j_idx + 2) % 17
+        ji[:, 3] = (j_idx + 3) % 17
         jw = np.zeros((V, 4), dtype=np.float32)
         jw[:, 0] = 1.0
         return (
