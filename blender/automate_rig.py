@@ -323,11 +323,18 @@ def main():
             if mod.type == "ARMATURE":
                 mod.use_deform_preserve_volume = True
 
-    # 4. Apply Animation
-    if args.anim and Path(args.anim).exists():
+    # 4. Apply Animation (only if the armature does not already carry an action imported from glTF)
+    has_action = (
+        armature_obj is not None
+        and armature_obj.animation_data is not None
+        and armature_obj.animation_data.action is not None
+    )
+    if not has_action and args.anim and Path(args.anim).exists():
         with open(args.anim, "r", encoding="utf-8") as f:
             anim_data = json.load(f)
         apply_animation(armature_obj, anim_data)
+    elif has_action:
+        print(f"[OK] Preserving mathematically accurate animation action '{armature_obj.animation_data.action.name}' from glTF import.")
 
     # 5. Clean scene of any stray objects before saving and exporting
     for obj in list(bpy.data.objects):
