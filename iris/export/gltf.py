@@ -235,9 +235,12 @@ class GltfExporter(BaseAssetExporter):
 
         # 3. Generate or Load Skinned 3D Mesh Geometry
         custom_mesh = kwargs.get("mesh", None)
+        uvs = kwargs.get("uvs", None)
         if custom_mesh is not None:
             if isinstance(custom_mesh, (tuple, list)):
-                if len(custom_mesh) == 5:
+                if len(custom_mesh) == 6:
+                    verts, norms, uvs, tri_indices, j_indices, j_weights = custom_mesh
+                elif len(custom_mesh) == 5:
                     verts, norms, tri_indices, j_indices, j_weights = custom_mesh
                 elif len(custom_mesh) == 4:
                     verts, tri_indices, arr3, arr4 = custom_mesh
@@ -254,12 +257,14 @@ class GltfExporter(BaseAssetExporter):
                 verts = custom_mesh.get("vertices", custom_mesh.get("verts"))
                 tri_indices = custom_mesh.get("faces", custom_mesh.get("indices", custom_mesh.get("tri_indices")))
                 norms = custom_mesh.get("normals", custom_mesh.get("norms", None))
+                uvs = custom_mesh.get("uvs", uvs)
                 j_weights = custom_mesh.get("weights", custom_mesh.get("j_weights"))
                 j_indices = custom_mesh.get("joint_indices", custom_mesh.get("j_indices", custom_mesh.get("joints")))
             else:
                 verts = getattr(custom_mesh, "vertices", getattr(custom_mesh, "verts", None))
                 tri_indices = getattr(custom_mesh, "faces", getattr(custom_mesh, "indices", None))
                 norms = getattr(custom_mesh, "normals", getattr(custom_mesh, "norms", None))
+                uvs = getattr(custom_mesh, "uvs", uvs)
                 j_weights = getattr(custom_mesh, "weights", getattr(custom_mesh, "j_weights", None))
                 j_indices = getattr(custom_mesh, "joint_indices", getattr(custom_mesh, "j_indices", None))
 
@@ -391,18 +396,33 @@ class GltfExporter(BaseAssetExporter):
             target=34963,  # ELEMENT_ARRAY_BUFFER
         )
 
-        # 3b. Skinned Mesh & Material Definitions
+        # 3b. Texture Coordinates (TEXCOORD_0)
+        prim_attributes = {
+            "POSITION": pos_acc_idx,
+            "NORMAL": norm_acc_idx,
+            "JOINTS_0": joints_acc_idx,
+            "WEIGHTS_0": weights_acc_idx,
+        }
+        if uvs is not None and len(uvs) == len(verts):
+            uvs_arr = np.asarray(uvs, dtype=np.float32)
+            tex_acc_idx = add_buffer_data(
+                uvs_arr.tobytes(),
+                component_type=5126,  # FLOAT
+                type_str="VEC2",
+                count=len(uvs_arr),
+                min_vals=[float(np.min(uvs_arr[:, 0])), float(np.min(uvs_arr[:, 1]))],
+                max_vals=[float(np.max(uvs_arr[:, 0])), float(np.max(uvs_arr[:, 1]))],
+                target=34962,  # ARRAY_BUFFER
+            )
+            prim_attributes["TEXCOORD_0"] = tex_acc_idx
+
+        # 3c. Skinned Mesh & Material Definitions
         meshes = [
             {
                 "name": f"Mesh_{skeleton.name}",
                 "primitives": [
                     {
-                        "attributes": {
-                            "POSITION": pos_acc_idx,
-                            "NORMAL": norm_acc_idx,
-                            "JOINTS_0": joints_acc_idx,
-                            "WEIGHTS_0": weights_acc_idx,
-                        },
+                        "attributes": prim_attributes,
                         "indices": indices_acc_idx,
                         "material": 0,
                         "mode": 4,  # TRIANGLES
@@ -413,7 +433,7 @@ class GltfExporter(BaseAssetExporter):
 
         custom_material = kwargs.get("material", None)
         if custom_material is not None:
-            materials = [custom_material]
+            materials = [dict(custom_material)]
         else:
             materials = [
                 {
@@ -428,7 +448,28 @@ class GltfExporter(BaseAssetExporter):
                 }
             ]
 
-        # 3c. Skinned Mesh Node bound to skeleton skin 0
+        # Connect diffuse texture if provided
+        texture_path = kwargs.get("texture_path", kwargs.get("texture_uri", None))
+        gltf_images = []
+        gltf_samplers = []
+        gltf_textures = []
+        if texture_path:
+            tex_name = Path(texture_path).name
+            gltf_images.append({"uri": tex_name})
+            gltf_samplers.append({
+                "magFilter": 9729,  # LINEAR
+                "minFilter": 9987,  # LINEAR_MIPMAP_LINEAR
+                "wrapS": 10497,     # REPEAT
+                "wrapT": 10497,     # REPEAT
+            })
+            gltf_textures.append({
+                "sampler": 0,
+                "source": 0,
+            })
+            if materials and "pbrMetallicRoughness" in materials[0]:
+                materials[0]["pbrMetallicRoughness"]["baseColorTexture"] = {"index": 0}
+
+        # 3d. Skinned Mesh Node bound to skeleton skin 0
         mesh_node_idx = len(nodes)
         nodes.append({
             "name": f"SkinnedMesh_{skeleton.name}",
@@ -474,6 +515,11 @@ class GltfExporter(BaseAssetExporter):
             "bufferViews": buffer_views,
             "accessors": accessors,
         }
+
+        if gltf_images:
+            gltf_doc["images"] = gltf_images
+            gltf_doc["samplers"] = gltf_samplers
+            gltf_doc["textures"] = gltf_textures
 
         with open(out_file, "w", encoding="utf-8") as f:
             json.dump(gltf_doc, f, indent=2)

@@ -1,0 +1,9 @@
+# Leocherd Iris Energy Creature Material Definition
+newmtl CreatureMat
+Ka 1.0000 1.0000 1.0000
+Kd 1.0000 1.0000 1.0000
+Ks 0.1500 0.1500 0.1500
+Ns 25.0000
+d 1.0000
+illum 2
+map_Kd creature_diffuse.png

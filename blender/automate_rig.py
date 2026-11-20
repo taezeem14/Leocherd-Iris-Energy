@@ -46,10 +46,14 @@ def parse_args():
 def clear_scene():
     """Removes all default objects, meshes, and lights."""
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    for block in bpy.data.meshes:
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for block in list(bpy.data.meshes):
         bpy.data.meshes.remove(block)
-    for block in bpy.data.armatures:
+    for block in list(bpy.data.armatures):
         bpy.data.armatures.remove(block)
+    for block in list(bpy.data.materials):
+        bpy.data.materials.remove(block)
 
 
 def import_3d_mesh(mesh_path: str):
@@ -323,6 +327,33 @@ def main():
             if mod.type == "ARMATURE":
                 mod.use_deform_preserve_volume = True
 
+    # 3b. Bind Creature Diffuse Texture if present
+    tex_file = None
+    if args.mesh:
+        candidate_tex = Path(args.mesh).resolve().parent / "creature_diffuse.png"
+        if candidate_tex.exists():
+            tex_file = candidate_tex
+
+    if tex_file and mesh_obj:
+        print(f"[*] Binding texture '{tex_file.name}' to material in Blender scene...")
+        try:
+            mat = bpy.data.materials.new(name="CreatureMaterial")
+            mat.use_nodes = True
+            nodes = mat.node_tree.nodes
+            links = mat.node_tree.links
+            bsdf = nodes.get("Principled BSDF")
+
+            tex_node = nodes.new("ShaderNodeTexImage")
+            tex_node.image = bpy.data.images.load(str(tex_file.resolve()))
+            if bsdf:
+                links.new(bsdf.inputs["Base Color"], tex_node.outputs["Color"])
+
+            mesh_obj.data.materials.clear()
+            mesh_obj.data.materials.append(mat)
+            print(f"[OK] Bound diffuse texture '{tex_file.name}' to Character_Mesh.")
+        except Exception as e:
+            print(f"[WARN] Failed to bind diffuse texture: {e}")
+
     # 4. Apply Animation (only if the armature does not already carry an action imported from glTF)
     has_action = (
         armature_obj is not None
@@ -336,12 +367,42 @@ def main():
     elif has_action:
         print(f"[OK] Preserving mathematically accurate animation action '{armature_obj.animation_data.action.name}' from glTF import.")
 
-    # 5. Clean scene of any stray objects before saving and exporting
+    # 4b. Configure Scene Playback Range and Frame Rate
+    target_frame_end = 412
+    fps = 30.0
+    if args.anim and Path(args.anim).exists():
+        try:
+            with open(args.anim, "r", encoding="utf-8") as f_a:
+                a_data = json.load(f_a)
+                num_k = len(a_data.get("timestamps", a_data.get("frames", [])))
+                if num_k > 0:
+                    target_frame_end = max(target_frame_end, num_k)
+                if "fps" in a_data:
+                    fps = float(a_data["fps"])
+        except Exception:
+            pass
+
+    if armature_obj and armature_obj.animation_data and armature_obj.animation_data.action:
+        act = armature_obj.animation_data.action
+        act_end = int(round(act.frame_range[1]))
+        target_frame_end = max(target_frame_end, act_end)
+
+    bpy.context.scene.render.fps = int(round(fps))
+    bpy.context.scene.frame_start = 1
+    bpy.context.scene.frame_end = target_frame_end
+    print(f"[OK] Scene playback range set to: {bpy.context.scene.frame_start}..{bpy.context.scene.frame_end} ({target_frame_end / fps:.2f}s @ {bpy.context.scene.render.fps} FPS)")
+
+    # 5. Clean scene of ANY stray objects (Cube, Camera, Light, Icosphere)
     for obj in list(bpy.data.objects):
-        if obj.type not in ["ARMATURE", "MESH"] or "icosphere" in obj.name.lower():
+        if obj.name.lower().startswith("cube") or "icosphere" in obj.name.lower():
             bpy.data.objects.remove(obj, do_unlink=True)
+        elif obj != mesh_obj and obj != armature_obj:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
     for block in list(bpy.data.meshes):
-        if "icosphere" in block.name.lower():
+        if block.name.lower().startswith("cube") or "icosphere" in block.name.lower():
+            bpy.data.meshes.remove(block)
+        elif mesh_obj and block != mesh_obj.data:
             bpy.data.meshes.remove(block)
 
     # 6. Save Output .blend
@@ -350,7 +411,7 @@ def main():
     bpy.ops.wm.save_as_mainfile(filepath=str(out_blend))
     print(f"[SUCCESS] Saved rigged Blender production scene to: {out_blend}")
 
-    # 7. Clean FBX Export (Mesh and Armature only)
+    # 7. Clean FBX Export (Mesh and Armature only with full animation baked)
     if args.export_fbx:
         out_fbx = Path(args.export_fbx).resolve()
         out_fbx.parent.mkdir(parents=True, exist_ok=True)
@@ -367,7 +428,13 @@ def main():
             filepath=str(out_fbx),
             use_selection=True,
             bake_anim=True,
+            bake_anim_use_all_actions=False,
+            bake_anim_use_nla_strips=False,
+            bake_anim_step=1.0,
+            bake_anim_simplify_factor=0.0,
             add_leaf_bones=False,
+            path_mode="COPY",
+            embed_textures=True,
             object_types={"ARMATURE", "MESH"},
         )
         print(f"[SUCCESS] Exported production FBX to: {out_fbx}")

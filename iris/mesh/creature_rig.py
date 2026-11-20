@@ -12,7 +12,11 @@ import json
 import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+from PIL import Image
 import numpy as np
 
 from iris.core.config import get_settings
@@ -60,30 +64,52 @@ class CreatureImageAnalyzer:
         if not path.exists():
             raise CreatureReconstructionError(f"Creature image not found: {path}")
 
-        img = cv2.imread(str(path))
-        if img is None:
-            raise CreatureReconstructionError(f"Failed to decode image: {path}")
+        if cv2 is not None:
+            img = cv2.imread(str(path))
+            if img is None:
+                raise CreatureReconstructionError(f"Failed to decode image: {path}")
 
-        h, w = img.shape[:2]
-        logger.info(f"Analyzing creature image: {path.name} ({w}x{h})...")
+            h, w = img.shape[:2]
+            logger.info(f"Analyzing creature image: {path.name} ({w}x{h})...")
 
-        # 1. Background Segmentation
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # Check background brightness (white vs dark)
-        corners = [gray[0, 0], gray[0, -1], gray[-1, 0], gray[-1, -1]]
-        bg_bright = np.mean(corners) > 180
+            # 1. Background Segmentation
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            corners = [gray[0, 0], gray[0, -1], gray[-1, 0], gray[-1, -1]]
+            bg_bright = np.mean(corners) > 180
 
-        if bg_bright:
-            _, thresh = cv2.threshold(gray, 245, 255, cv2.THRESH_BINARY_INV)
+            if bg_bright:
+                _, thresh = cv2.threshold(gray, 245, 255, cv2.THRESH_BINARY_INV)
+            else:
+                _, thresh = cv2.threshold(gray, 15, 255, cv2.THRESH_BINARY)
+
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                raise CreatureReconstructionError("Could not isolate creature silhouette from background.")
+
+            largest = max(contours, key=cv2.contourArea)
+            bx, by, bw, bh = cv2.boundingRect(largest)
         else:
-            _, thresh = cv2.threshold(gray, 15, 255, cv2.THRESH_BINARY)
+            pil_img = Image.open(str(path)).convert("RGB")
+            w, h = pil_img.size
+            img_rgb = np.array(pil_img)
+            img = img_rgb[:, :, ::-1]  # Convert RGB to BGR for internal consistency
+            logger.info(f"Analyzing creature image via PIL: {path.name} ({w}x{h})...")
 
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            raise CreatureReconstructionError("Could not isolate creature silhouette from background.")
+            gray = np.mean(img_rgb, axis=2).astype(np.uint8)
+            corners = [gray[0, 0], gray[0, -1], gray[-1, 0], gray[-1, -1]]
+            bg_bright = np.mean(corners) > 180
 
-        largest = max(contours, key=cv2.contourArea)
-        bx, by, bw, bh = cv2.boundingRect(largest)
+            if bg_bright:
+                thresh = (gray < 245).astype(np.uint8) * 255
+            else:
+                thresh = (gray > 15).astype(np.uint8) * 255
+
+            ys, xs = np.where(thresh > 0)
+            if len(xs) > 0 and len(ys) > 0:
+                bx, by = int(np.min(xs)), int(np.min(ys))
+                bw, bh = int(np.max(xs) - bx + 1), int(np.max(ys) - by + 1)
+            else:
+                bx, by, bw, bh = 0, 0, w, h
 
         # 2. Slice Analysis
         slice_widths = []
@@ -148,9 +174,11 @@ class CreatureImageAnalyzer:
             "Chest": np.array([0.0, chest_y, 0.0], dtype=np.float32),
             "Neck": np.array([0.0, neck_y, 0.0], dtype=np.float32),
             "Head": np.array([0.0, head_center_y, 0.0], dtype=np.float32),
+            "LeftShoulder": np.array([-sh_span * 0.45, chest_y + 0.01 * height_m, 0.0], dtype=np.float32),
             "LeftArm": np.array([-sh_span, chest_y, 0.0], dtype=np.float32),
             "LeftForeArm": np.array([-elbow_span, elbow_y, 0.04], dtype=np.float32),
             "LeftHand": np.array([-hand_span, hand_y, 0.08], dtype=np.float32),
+            "RightShoulder": np.array([sh_span * 0.45, chest_y + 0.01 * height_m, 0.0], dtype=np.float32),
             "RightArm": np.array([sh_span, chest_y, 0.0], dtype=np.float32),
             "RightForeArm": np.array([elbow_span, elbow_y, 0.04], dtype=np.float32),
             "RightHand": np.array([hand_span, hand_y, 0.08], dtype=np.float32),
@@ -199,10 +227,12 @@ class CreatureRigBuilder:
             ("Spine", "Chest", "Bone_Spine_Chest"),
             ("Chest", "Neck", "Bone_Chest_Neck"),
             ("Neck", "Head", "Bone_Neck_Head"),
-            ("Chest", "LeftArm", "Bone_Chest_LeftArm"),
+            ("Chest", "LeftShoulder", "Bone_Chest_LeftShoulder"),
+            ("LeftShoulder", "LeftArm", "Bone_LeftShoulder_LeftArm"),
             ("LeftArm", "LeftForeArm", "Bone_LeftArm_LeftForeArm"),
             ("LeftForeArm", "LeftHand", "Bone_LeftForeArm_LeftHand"),
-            ("Chest", "RightArm", "Bone_Chest_RightArm"),
+            ("Chest", "RightShoulder", "Bone_Chest_RightShoulder"),
+            ("RightShoulder", "RightArm", "Bone_RightShoulder_RightArm"),
             ("RightArm", "RightForeArm", "Bone_RightArm_RightForeArm"),
             ("RightForeArm", "RightHand", "Bone_RightForeArm_RightHand"),
             ("Hips", "LeftUpLeg", "Bone_Hips_LeftUpLeg"),
@@ -280,6 +310,7 @@ class CreatureSkeletalFigureGenerator:
         j_child: int,
         radius: float = 0.035,
         bulge_t: float = 0.25,
+        num_joints: int = 19,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         vec = p_end - p_start
         length = float(np.linalg.norm(vec))
@@ -303,32 +334,48 @@ class CreatureSkeletalFigureGenerator:
         v5 = p_end
         verts = np.array([v0, v1, v2, v3, v4, v5], dtype=np.float32)
 
+        # Helper to get 4 distinct joint indices
+        def get_distinct_indices(primary: int, secondary: Optional[int] = None) -> List[int]:
+            used = {primary}
+            if secondary is not None:
+                used.add(secondary)
+            res = [primary]
+            if secondary is not None:
+                res.append(secondary)
+            cand = 0
+            while len(res) < 4:
+                cand_idx = cand % num_joints
+                if cand_idx not in used:
+                    res.append(cand_idx)
+                    used.add(cand_idx)
+                cand += 1
+            return res
+
         if j_parent == j_child:
-            ji = np.zeros((6, 4), dtype=np.uint16)
-            ji[:, 0] = j_parent
-            ji[:, 1] = (j_parent + 1) % 17
-            ji[:, 2] = (j_parent + 2) % 17
-            ji[:, 3] = (j_parent + 3) % 17
+            parent_distinct = get_distinct_indices(j_parent)
+            ji = np.tile(np.array(parent_distinct, dtype=np.uint16), (6, 1))
             jw = np.zeros((6, 4), dtype=np.float32)
             jw[:, 0] = 1.0
         else:
             w_p = float(max(0.0, min(1.0, 1.0 - bulge_t)))
             w_c = float(max(0.0, min(1.0, bulge_t)))
+            parent_distinct = get_distinct_indices(j_parent)
+            child_distinct = get_distinct_indices(j_child)
             if w_p >= w_c:
-                mid_ji = [j_parent, j_child, 0, 0]
-                mid_jw = [w_p, w_c, 0.0, 0.0]
+                mid_distinct = get_distinct_indices(j_parent, j_child)
+                mid_weights = [w_p, w_c, 0.0, 0.0]
             else:
-                mid_ji = [j_child, j_parent, 0, 0]
-                mid_jw = [w_c, w_p, 0.0, 0.0]
+                mid_distinct = get_distinct_indices(j_child, j_parent)
+                mid_weights = [w_c, w_p, 0.0, 0.0]
 
             ji = np.array(
                 [
-                    [j_parent, 0, 0, 0],
-                    mid_ji,
-                    mid_ji,
-                    mid_ji,
-                    mid_ji,
-                    [j_child, 0, 0, 0],
+                    parent_distinct,
+                    mid_distinct,
+                    mid_distinct,
+                    mid_distinct,
+                    mid_distinct,
+                    child_distinct,
                 ],
                 dtype=np.uint16,
             )
@@ -336,10 +383,10 @@ class CreatureSkeletalFigureGenerator:
             jw = np.array(
                 [
                     [1.0, 0.0, 0.0, 0.0],
-                    mid_jw,
-                    mid_jw,
-                    mid_jw,
-                    mid_jw,
+                    mid_weights,
+                    mid_weights,
+                    mid_weights,
+                    mid_weights,
                     [1.0, 0.0, 0.0, 0.0],
                 ],
                 dtype=np.float32,
@@ -378,6 +425,7 @@ class CreatureSkeletalFigureGenerator:
         j_idx: int,
         lat_segments: int = 8,
         lon_segments: int = 12,
+        num_joints: int = 19,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         verts = []
         norms = []
@@ -422,11 +470,16 @@ class CreatureSkeletalFigureGenerator:
             faces.append([b_last + j, b_last + next_j, north_idx])
 
         V = len(verts)
-        ji = np.zeros((V, 4), dtype=np.uint16)
-        ji[:, 0] = j_idx
-        ji[:, 1] = (j_idx + 1) % 17
-        ji[:, 2] = (j_idx + 2) % 17
-        ji[:, 3] = (j_idx + 3) % 17
+        # Select 4 distinct joint indices to satisfy glTF-Validator
+        distinct_joints = [j_idx]
+        cand = 0
+        while len(distinct_joints) < 4:
+            cand_idx = cand % num_joints
+            if cand_idx not in distinct_joints:
+                distinct_joints.append(cand_idx)
+            cand += 1
+
+        ji = np.tile(np.array(distinct_joints, dtype=np.uint16), (V, 1))
         jw = np.zeros((V, 4), dtype=np.float32)
         jw[:, 0] = 1.0
         return (
@@ -465,17 +518,20 @@ class CreatureSkeletalFigureGenerator:
             v_offset += len(v)
 
         # 1. Joint spheres (cyan glowing beads)
+        num_j = len(skeleton.joints)
         for j_name, j_node in skeleton.joints.items():
             idx = j_map[j_name]
             if j_name in ["Head", "Hips", "Chest"]:
                 r = 0.035
+            elif j_name in ["LeftShoulder", "RightShoulder"]:
+                r = 0.030
             elif j_name in ["LeftArm", "RightArm", "LeftUpLeg", "RightUpLeg"]:
                 r = 0.028
             elif j_name in ["LeftLeg", "RightLeg", "LeftForeArm", "RightForeArm"]:
                 r = 0.024
             else:
                 r = 0.020
-            v, n, f, ji, jw = cls.generate_joint_sphere(j_node.rest_world_pos, r, idx)
+            v, n, f, ji, jw = cls.generate_joint_sphere(j_node.rest_world_pos, r, idx, num_joints=num_j)
             append_component(v, n, f, ji, jw)
 
         # 2. Main articulated octahedral diamond bones
@@ -488,11 +544,13 @@ class CreatureSkeletalFigureGenerator:
                 rad = 0.055 * profile.bulk_factor
             elif "Hips" in b_name:
                 rad = 0.048 * profile.bulk_factor
+            elif "Shoulder" in b_name:
+                rad = 0.045 * profile.bulk_factor
             elif "Arm" in b_name:
                 rad = 0.038 * profile.bulk_factor
             else:
                 rad = 0.042 * profile.bulk_factor
-            v, n, f, ji, jw = cls.generate_octahedral_bone(p_pos, c_pos, jp, jc, radius=rad)
+            v, n, f, ji, jw = cls.generate_octahedral_bone(p_pos, c_pos, jp, jc, radius=rad, num_joints=num_j)
             append_component(v, n, f, ji, jw)
 
         # 3. Head Mohawk Crest (as seen in the reference image)
@@ -500,10 +558,10 @@ class CreatureSkeletalFigureGenerator:
             p_head = skeleton.joints["Head"].rest_world_pos
             p_crest = p_head + np.array([0.0, 0.12 * profile.height_m, 0.01], dtype=np.float32)
             v, n, f, ji, jw = cls.generate_octahedral_bone(
-                p_head, p_crest, j_map["Head"], j_map["Head"], radius=0.032, bulge_t=0.35
+                p_head, p_crest, j_map["Head"], j_map["Head"], radius=0.032, bulge_t=0.35, num_joints=num_j
             )
             append_component(v, n, f, ji, jw)
-            v, n, f, ji, jw = cls.generate_joint_sphere(p_crest, 0.018, j_map["Head"])
+            v, n, f, ji, jw = cls.generate_joint_sphere(p_crest, 0.018, j_map["Head"], num_joints=num_j)
             append_component(v, n, f, ji, jw)
 
         # 4. Pelvic Buckle Diamond (as seen in the reference image)
@@ -511,7 +569,7 @@ class CreatureSkeletalFigureGenerator:
             p_hips = skeleton.joints["Hips"].rest_world_pos
             p_buckle = p_hips + np.array([0.0, -0.08, 0.05], dtype=np.float32)
             v, n, f, ji, jw = cls.generate_octahedral_bone(
-                p_hips, p_buckle, j_map["Hips"], j_map["Hips"], radius=0.045 * profile.bulk_factor, bulge_t=0.5
+                p_hips, p_buckle, j_map["Hips"], j_map["Hips"], radius=0.045 * profile.bulk_factor, bulge_t=0.5, num_joints=num_j
             )
             append_component(v, n, f, ji, jw)
 
@@ -529,10 +587,10 @@ class CreatureSkeletalFigureGenerator:
                 for f_off in finger_offsets:
                     p_tip = p_h + f_off
                     v, n, f, ji, jw = cls.generate_octahedral_bone(
-                        p_h, p_tip, h_idx, h_idx, radius=0.014, bulge_t=0.4
+                        p_h, p_tip, h_idx, h_idx, radius=0.014, bulge_t=0.4, num_joints=num_j
                     )
                     append_component(v, n, f, ji, jw)
-                    v, n, f, ji, jw = cls.generate_joint_sphere(p_tip, 0.010, h_idx)
+                    v, n, f, ji, jw = cls.generate_joint_sphere(p_tip, 0.010, h_idx, num_joints=num_j)
                     append_component(v, n, f, ji, jw)
 
         final_v = np.vstack(all_v).astype(np.float32)
@@ -595,7 +653,11 @@ class CreatureReconstructionPipeline:
 
         # Save extracted diffuse texture
         tex_path = out_dir / "creature_diffuse.png"
-        cv2.imwrite(str(tex_path), texture_crop)
+        if cv2 is not None:
+            cv2.imwrite(str(tex_path), texture_crop)
+        else:
+            crop_rgb = texture_crop[:, :, ::-1] if len(texture_crop.shape) == 3 else texture_crop
+            Image.fromarray(crop_rgb).save(str(tex_path))
         logger.info(f"Saved creature diffuse texture to: {tex_path}")
 
         # 2. Build Creature Skeleton
@@ -610,7 +672,7 @@ class CreatureReconstructionPipeline:
             f"{len(faces)} faces, {len(skeleton.joints)} articulated joints."
         )
 
-        # Save Wavefront OBJ proxy
+        # Save Wavefront OBJ proxy and MTL material definition
         obj_path = out_dir / "creature_mesh.obj"
         with open(obj_path, "w", encoding="utf-8") as f_obj:
             f_obj.write(f"# Leocherd Iris Energy Creature Mesh - {img_path.stem}\n")
@@ -624,6 +686,18 @@ class CreatureReconstructionPipeline:
             for face in faces:
                 idx1, idx2, idx3 = face[0] + 1, face[1] + 1, face[2] + 1
                 f_obj.write(f"f {idx1}/{idx1}/{idx1} {idx2}/{idx2}/{idx2} {idx3}/{idx3}/{idx3}\n")
+
+        mtl_path = out_dir / "creature_material.mtl"
+        with open(mtl_path, "w", encoding="utf-8") as f_mtl:
+            f_mtl.write("# Leocherd Iris Energy Creature Material Definition\n")
+            f_mtl.write("newmtl CreatureMat\n")
+            f_mtl.write("Ka 1.0000 1.0000 1.0000\n")
+            f_mtl.write("Kd 1.0000 1.0000 1.0000\n")
+            f_mtl.write("Ks 0.1500 0.1500 0.1500\n")
+            f_mtl.write("Ns 25.0000\n")
+            f_mtl.write("d 1.0000\n")
+            f_mtl.write("illum 2\n")
+            f_mtl.write(f"map_Kd {tex_path.name}\n")
 
         # 4. Load or Retarget Animation
         fps = 30.0
@@ -645,6 +719,11 @@ class CreatureReconstructionPipeline:
                     for r in anim_raw["root_translations"]
                 ]
                 rotations = {k: np.array(v, dtype=np.float32) for k, v in anim_raw["rotations"].items()}
+                # Ensure shoulder tracks map to both joint and bone names
+                if "LeftShoulder" in rotations:
+                    rotations["Bone_Chest_LeftShoulder"] = rotations["LeftShoulder"]
+                if "RightShoulder" in rotations:
+                    rotations["Bone_Chest_RightShoulder"] = rotations["RightShoulder"]
             else:
                 frames_list = anim_raw.get("frames", [])
                 timestamps = [float(i) / fps for i in range(len(frames_list))]
@@ -699,6 +778,7 @@ class CreatureReconstructionPipeline:
         # 5. Export Multi-Engine Assets
         exported_files: Dict[str, str] = {
             "mesh_obj": str(obj_path),
+            "material_mtl": str(mtl_path),
             "texture": str(tex_path),
         }
 
@@ -720,8 +800,9 @@ class CreatureReconstructionPipeline:
                 skeleton=skeleton,
                 animation=animation,
                 output_path=gltf_path,
-                mesh=(verts, normals, faces, joint_idx, joint_weights),
+                mesh=(verts, normals, uvs, faces, joint_idx, joint_weights),
                 material=cyan_material,
+                texture_path=str(tex_path),
             )
             exported_files["gltf"] = str(gltf_path)
             logger.info(f"Exported Unity/WebGL glTF to: {gltf_path}")

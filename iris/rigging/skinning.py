@@ -8,8 +8,11 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
-from scipy.sparse import csgraph, csr_matrix, diags
-from scipy.sparse.linalg import spsolve
+try:
+    from scipy.sparse import csgraph, csr_matrix, diags
+    from scipy.sparse.linalg import spsolve
+except ImportError:
+    csgraph = csr_matrix = diags = spsolve = None
 
 from iris.rigging.orientation import DualQuaternion, DualQuaternionMath, QuaternionMath
 from iris.rigging.skeleton import Skeleton

@@ -27,10 +27,12 @@ def test_creature_analysis_and_rig_generation(tmp_path: Path):
     assert "LeftArm" in profile.anchors
     assert texture.shape[0] > 100
 
-    # 2. Skeleton Construction
+    # 2. Skeleton Construction (19 joints including LeftShoulder and RightShoulder)
     skeleton = CreatureRigBuilder.build_skeleton(profile)
-    assert len(skeleton.joints) == 17
-    assert len(skeleton.bones) == 16
+    assert len(skeleton.joints) == 19
+    assert len(skeleton.bones) == 18
+    assert "LeftShoulder" in skeleton.joints
+    assert "RightShoulder" in skeleton.joints
     assert skeleton.root_name == "Hips"
 
     # 3. Skinned Mesh Generation
