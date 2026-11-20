@@ -1,0 +1,739 @@
+{
+  "name": "human",
+  "root_name": "Hips",
+  "joints": {
+    "Chest": {
+      "parent": "Spine",
+      "children": [
+        "Neck",
+        "LeftShoulder",
+        "RightShoulder"
+      ],
+      "rest_world_pos": [
+        0.0,
+        1.4500000476837158,
+        0.0
+      ],
+      "world_pos": [
+        0.0,
+        1.4500000476837158,
+        0.0
+      ],
+      "local_pos": [
+        0.0,
+        0.25,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "Head": {
+      "parent": "Neck",
+      "children": [],
+      "rest_world_pos": [
+        0.0,
+        1.7200000286102295,
+        0.0
+      ],
+      "world_pos": [
+        0.0,
+        1.7200000286102295,
+        0.0
+      ],
+      "local_pos": [
+        0.0,
+        0.13999998569488525,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "Hips": {
+      "parent": null,
+      "children": [
+        "Spine",
+        "LeftUpLeg",
+        "RightUpLeg"
+      ],
+      "rest_world_pos": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "world_pos": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "local_pos": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "LeftArm": {
+      "parent": "LeftShoulder",
+      "children": [
+        "LeftForeArm"
+      ],
+      "rest_world_pos": [
+        -0.20000000298023224,
+        1.4500000476837158,
+        0.0
+      ],
+      "world_pos": [
+        -0.20000000298023224,
+        1.4500000476837158,
+        0.0
+      ],
+      "local_pos": [
+        -0.10000000149011612,
+        0.0,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "LeftFoot": {
+      "parent": "LeftLeg",
+      "children": [],
+      "rest_world_pos": [
+        -0.10000000149011612,
+        0.10000000149011612,
+        0.05000000074505806
+      ],
+      "world_pos": [
+        -0.10000000149011612,
+        0.10000000149011612,
+        0.05000000074505806
+      ],
+      "local_pos": [
+        0.0,
+        -0.4000000059604645,
+        0.05000000074505806
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "LeftForeArm": {
+      "parent": "LeftArm",
+      "children": [
+        "LeftHand"
+      ],
+      "rest_world_pos": [
+        -0.47999998927116394,
+        1.4500000476837158,
+        0.0
+      ],
+      "world_pos": [
+        -0.47999998927116394,
+        1.4500000476837158,
+        0.0
+      ],
+      "local_pos": [
+        -0.2799999713897705,
+        0.0,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "LeftHand": {
+      "parent": "LeftForeArm",
+      "children": [],
+      "rest_world_pos": [
+        -0.75,
+        1.4500000476837158,
+        0.0
+      ],
+      "world_pos": [
+        -0.75,
+        1.4500000476837158,
+        0.0
+      ],
+      "local_pos": [
+        -0.27000001072883606,
+        0.0,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "LeftLeg": {
+      "parent": "LeftUpLeg",
+      "children": [
+        "LeftFoot"
+      ],
+      "rest_world_pos": [
+        -0.10000000149011612,
+        0.5,
+        0.0
+      ],
+      "world_pos": [
+        -0.10000000149011612,
+        0.5,
+        0.0
+      ],
+      "local_pos": [
+        0.0,
+        -0.44999998807907104,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "LeftShoulder": {
+      "parent": "Chest",
+      "children": [
+        "LeftArm"
+      ],
+      "rest_world_pos": [
+        -0.10000000149011612,
+        1.4500000476837158,
+        0.0
+      ],
+      "world_pos": [
+        -0.10000000149011612,
+        1.4500000476837158,
+        0.0
+      ],
+      "local_pos": [
+        -0.10000000149011612,
+        0.0,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "LeftUpLeg": {
+      "parent": "Hips",
+      "children": [
+        "LeftLeg"
+      ],
+      "rest_world_pos": [
+        -0.10000000149011612,
+        0.949999988079071,
+        0.0
+      ],
+      "world_pos": [
+        -0.10000000149011612,
+        0.949999988079071,
+        0.0
+      ],
+      "local_pos": [
+        -0.10000000149011612,
+        -0.050000011920928955,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "Neck": {
+      "parent": "Chest",
+      "children": [
+        "Head"
+      ],
+      "rest_world_pos": [
+        0.0,
+        1.5800000429153442,
+        0.0
+      ],
+      "world_pos": [
+        0.0,
+        1.5800000429153442,
+        0.0
+      ],
+      "local_pos": [
+        0.0,
+        0.12999999523162842,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "RightArm": {
+      "parent": "RightShoulder",
+      "children": [
+        "RightForeArm"
+      ],
+      "rest_world_pos": [
+        0.20000000298023224,
+        1.4500000476837158,
+        0.0
+      ],
+      "world_pos": [
+        0.20000000298023224,
+        1.4500000476837158,
+        0.0
+      ],
+      "local_pos": [
+        0.10000000149011612,
+        0.0,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "RightFoot": {
+      "parent": "RightLeg",
+      "children": [],
+      "rest_world_pos": [
+        0.10000000149011612,
+        0.10000000149011612,
+        0.05000000074505806
+      ],
+      "world_pos": [
+        0.10000000149011612,
+        0.10000000149011612,
+        0.05000000074505806
+      ],
+      "local_pos": [
+        0.0,
+        -0.4000000059604645,
+        0.05000000074505806
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "RightForeArm": {
+      "parent": "RightArm",
+      "children": [
+        "RightHand"
+      ],
+      "rest_world_pos": [
+        0.47999998927116394,
+        1.4500000476837158,
+        0.0
+      ],
+      "world_pos": [
+        0.47999998927116394,
+        1.4500000476837158,
+        0.0
+      ],
+      "local_pos": [
+        0.2799999713897705,
+        0.0,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "RightHand": {
+      "parent": "RightForeArm",
+      "children": [],
+      "rest_world_pos": [
+        0.75,
+        1.4500000476837158,
+        0.0
+      ],
+      "world_pos": [
+        0.75,
+        1.4500000476837158,
+        0.0
+      ],
+      "local_pos": [
+        0.27000001072883606,
+        0.0,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "RightLeg": {
+      "parent": "RightUpLeg",
+      "children": [
+        "RightFoot"
+      ],
+      "rest_world_pos": [
+        0.10000000149011612,
+        0.5,
+        0.0
+      ],
+      "world_pos": [
+        0.10000000149011612,
+        0.5,
+        0.0
+      ],
+      "local_pos": [
+        0.0,
+        -0.44999998807907104,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "RightShoulder": {
+      "parent": "Chest",
+      "children": [
+        "RightArm"
+      ],
+      "rest_world_pos": [
+        0.10000000149011612,
+        1.4500000476837158,
+        0.0
+      ],
+      "world_pos": [
+        0.10000000149011612,
+        1.4500000476837158,
+        0.0
+      ],
+      "local_pos": [
+        0.10000000149011612,
+        0.0,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "RightUpLeg": {
+      "parent": "Hips",
+      "children": [
+        "RightLeg"
+      ],
+      "rest_world_pos": [
+        0.10000000149011612,
+        0.949999988079071,
+        0.0
+      ],
+      "world_pos": [
+        0.10000000149011612,
+        0.949999988079071,
+        0.0
+      ],
+      "local_pos": [
+        0.10000000149011612,
+        -0.050000011920928955,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "Spine": {
+      "parent": "Hips",
+      "children": [
+        "Chest"
+      ],
+      "rest_world_pos": [
+        0.0,
+        1.2000000476837158,
+        0.0
+      ],
+      "world_pos": [
+        0.0,
+        1.2000000476837158,
+        0.0
+      ],
+      "local_pos": [
+        0.0,
+        0.20000004768371582,
+        0.0
+      ],
+      "world_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "local_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "bones": [
+    {
+      "name": "Bone_Hips_Spine",
+      "parent": "Hips",
+      "child": "Spine",
+      "rest_length": 0.20000004768371582
+    },
+    {
+      "name": "Bone_Spine_Chest",
+      "parent": "Spine",
+      "child": "Chest",
+      "rest_length": 0.25
+    },
+    {
+      "name": "Bone_Chest_Neck",
+      "parent": "Chest",
+      "child": "Neck",
+      "rest_length": 0.12999999523162842
+    },
+    {
+      "name": "Bone_Neck_Head",
+      "parent": "Neck",
+      "child": "Head",
+      "rest_length": 0.13999998569488525
+    },
+    {
+      "name": "Bone_Chest_LeftShoulder",
+      "parent": "Chest",
+      "child": "LeftShoulder",
+      "rest_length": 0.10000000149011612
+    },
+    {
+      "name": "Bone_LeftShoulder_LeftArm",
+      "parent": "LeftShoulder",
+      "child": "LeftArm",
+      "rest_length": 0.10000000149011612
+    },
+    {
+      "name": "Bone_LeftArm_LeftForeArm",
+      "parent": "LeftArm",
+      "child": "LeftForeArm",
+      "rest_length": 0.2799999713897705
+    },
+    {
+      "name": "Bone_LeftForeArm_LeftHand",
+      "parent": "LeftForeArm",
+      "child": "LeftHand",
+      "rest_length": 0.27000001072883606
+    },
+    {
+      "name": "Bone_Chest_RightShoulder",
+      "parent": "Chest",
+      "child": "RightShoulder",
+      "rest_length": 0.10000000149011612
+    },
+    {
+      "name": "Bone_RightShoulder_RightArm",
+      "parent": "RightShoulder",
+      "child": "RightArm",
+      "rest_length": 0.10000000149011612
+    },
+    {
+      "name": "Bone_RightArm_RightForeArm",
+      "parent": "RightArm",
+      "child": "RightForeArm",
+      "rest_length": 0.2799999713897705
+    },
+    {
+      "name": "Bone_RightForeArm_RightHand",
+      "parent": "RightForeArm",
+      "child": "RightHand",
+      "rest_length": 0.27000001072883606
+    },
+    {
+      "name": "Bone_Hips_LeftUpLeg",
+      "parent": "Hips",
+      "child": "LeftUpLeg",
+      "rest_length": 0.11180340498685837
+    },
+    {
+      "name": "Bone_LeftUpLeg_LeftLeg",
+      "parent": "LeftUpLeg",
+      "child": "LeftLeg",
+      "rest_length": 0.44999998807907104
+    },
+    {
+      "name": "Bone_LeftLeg_LeftFoot",
+      "parent": "LeftLeg",
+      "child": "LeftFoot",
+      "rest_length": 0.40311288833618164
+    },
+    {
+      "name": "Bone_Hips_RightUpLeg",
+      "parent": "Hips",
+      "child": "RightUpLeg",
+      "rest_length": 0.11180340498685837
+    },
+    {
+      "name": "Bone_RightUpLeg_RightLeg",
+      "parent": "RightUpLeg",
+      "child": "RightLeg",
+      "rest_length": 0.44999998807907104
+    },
+    {
+      "name": "Bone_RightLeg_RightFoot",
+      "parent": "RightLeg",
+      "child": "RightFoot",
+      "rest_length": 0.40311288833618164
+    }
+  ],
+  "use_deform_preserve_volume": true,
+  "skinning_method": "dqs"
+}

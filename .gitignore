@@ -15,10 +15,18 @@ venv/
 ENV/
 
 # Output files & large model binaries
-outputs/
+outputs/*
+!outputs/creature_dwarf/
+!outputs/dance_fixed/
+outputs/dance_fixed/*
+!outputs/dance_fixed/reconstruction_77bd452d_anim_data.json
+!outputs/dance_fixed/reconstruction_77bd452d_rig_data.json
+
 data/models/*.onnx
-data/samples/*.mp4
 data/samples/*.mov
+data/samples/online_walking_sample.mp4
+!data/samples/sample_walk.mp4
+!data/samples/creature_reference.jpg
 
 # IDE & OS
 .vscode/
