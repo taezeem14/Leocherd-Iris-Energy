@@ -1,0 +1,258 @@
+{
+  "directory": "D:\\download-chrome\\Leocherd-Project\\outputs\\creature_dwarf",
+  "status": "PASSED",
+  "checks": {
+    "khronos_gltf_validator": {
+      "validator_version": "2.0.0-dev.3.10",
+      "errors": 0,
+      "warnings": 0,
+      "infos": 0,
+      "hints": 0,
+      "report_file": "gltf_validation_report.json"
+    },
+    "strict_gltf_math": {
+      "valid": true,
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "node_count": 20,
+        "skin_count": 1,
+        "total_skin_joints": 19,
+        "mesh_count": 1,
+        "total_vertices": 2576,
+        "total_faces": 4928,
+        "animation_count": 1,
+        "max_keyframes": 412
+      }
+    },
+    "obj_mtl_texture": {
+      "obj_exists": true,
+      "obj_references_mtl": true,
+      "mtl_exists": true,
+      "mtl_references_png": true,
+      "texture_size": [
+        512,
+        512
+      ],
+      "texture_is_power_of_two": true
+    },
+    "bvh": {
+      "exists": true,
+      "has_412_frames": true,
+      "has_shoulder_joints": true
+    },
+    "blender_blend": {
+      "mode": "blend",
+      "asset": "D:\\download-chrome\\Leocherd-Project\\outputs\\creature_dwarf\\creature_rigged.blend",
+      "objects": [
+        {
+          "name": "Character_Mesh",
+          "type": "MESH",
+          "parent": "Skin_CreatureRig",
+          "dimensions": [
+            1.1449,
+            0.9945,
+            1.2928
+          ]
+        },
+        {
+          "name": "Skin_CreatureRig",
+          "type": "ARMATURE",
+          "parent": null,
+          "dimensions": [
+            1.2089,
+            0.9075,
+            1.2145
+          ]
+        }
+      ],
+      "cube_count": 0,
+      "frame_start": 1,
+      "frame_end": 412,
+      "fps": 30,
+      "fps_base": 1.0,
+      "duration_sec": 13.7,
+      "bone_count": 19,
+      "bones": [
+        "Hips",
+        "Spine",
+        "Chest",
+        "Neck",
+        "Head",
+        "LeftShoulder",
+        "LeftArm",
+        "LeftForeArm",
+        "LeftHand",
+        "RightShoulder",
+        "RightArm",
+        "RightForeArm",
+        "RightHand",
+        "LeftUpLeg",
+        "LeftLeg",
+        "LeftFoot",
+        "RightUpLeg",
+        "RightLeg",
+        "RightFoot"
+      ],
+      "action_name": "Anim_human_Skin_CreatureRig",
+      "action_frame_range": [
+        1.0,
+        412.0
+      ],
+      "fcurve_count": 79,
+      "keyframe_counts_per_fcurve": [
+        412
+      ],
+      "motion_deltas": {
+        "1->100": 5.95261,
+        "100->200": 4.6016,
+        "200->300": 6.02028,
+        "300->350": 4.56322,
+        "350->390": 3.17844,
+        "390->412": 1.85809
+      },
+      "materials": [
+        {
+          "material": "Cyan_Luminous_Skeletal_Material",
+          "texture_nodes": [
+            {
+              "node": "Image Texture",
+              "image_name": "creature_diffuse.png",
+              "packed": true,
+              "packed_bytes": 262496,
+              "size": [
+                512,
+                512
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "blender_fbx": {
+      "mode": "fbx",
+      "asset": "D:\\download-chrome\\Leocherd-Project\\outputs\\creature_dwarf\\creature_rigged.fbx",
+      "fbx_version": 7400,
+      "raw_geometries": [
+        {
+          "name": "Mesh_CreatureRig",
+          "subtype": "Mesh"
+        }
+      ],
+      "raw_mesh_models": [
+        {
+          "name": "Character_Mesh",
+          "subtype": "Mesh"
+        }
+      ],
+      "raw_bone_models": [
+        "Hips",
+        "Spine",
+        "Chest",
+        "Neck",
+        "Head",
+        "LeftShoulder",
+        "LeftArm",
+        "LeftForeArm",
+        "LeftHand",
+        "RightShoulder",
+        "RightArm",
+        "RightForeArm",
+        "RightHand",
+        "LeftUpLeg",
+        "LeftLeg",
+        "LeftFoot",
+        "RightUpLeg",
+        "RightLeg",
+        "RightFoot"
+      ],
+      "raw_cube_count": 0,
+      "global_settings_time": {
+        "TimeMode": 6,
+        "TimeSpanStart": 0.0333,
+        "TimeSpanStop": 13.7333,
+        "CustomFrameRate": 30.0
+      },
+      "animation_stack_time": {
+        "LocalStart": 0.0333,
+        "LocalStop": 13.7333,
+        "ReferenceStart": 0.0333,
+        "ReferenceStop": 13.7333
+      },
+      "take_time": {
+        "LocalTime": [
+          0.0333,
+          13.7333
+        ],
+        "ReferenceTime": [
+          0.0333,
+          13.7333
+        ]
+      },
+      "clean_import_objects": [
+        {
+          "name": "Character_Mesh",
+          "type": "MESH",
+          "parent": "Skin_CreatureRig",
+          "dimensions": [
+            1.0497,
+            0.9945,
+            1.2928
+          ]
+        },
+        {
+          "name": "Skin_CreatureRig",
+          "type": "ARMATURE",
+          "parent": null,
+          "dimensions": [
+            1.2089,
+            0.9075,
+            1.2145
+          ]
+        }
+      ],
+      "clean_import_cube_count": 0,
+      "bone_count": 19,
+      "bones": [
+        "Hips",
+        "Spine",
+        "Chest",
+        "Neck",
+        "Head",
+        "LeftShoulder",
+        "LeftArm",
+        "LeftForeArm",
+        "LeftHand",
+        "RightShoulder",
+        "RightArm",
+        "RightForeArm",
+        "RightHand",
+        "LeftUpLeg",
+        "LeftLeg",
+        "LeftFoot",
+        "RightUpLeg",
+        "RightLeg",
+        "RightFoot"
+      ],
+      "action_name": "Skin_CreatureRig|Scene",
+      "action_frame_range_offset0": [
+        1.0,
+        412.0
+      ],
+      "fcurve_count": 199,
+      "motion_deltas": {
+        "1->100": 5.95261,
+        "100->200": 4.6016,
+        "200->300": 6.02028,
+        "300->350": 4.56322,
+        "350->390": 3.17844,
+        "390->412": 1.85809
+      },
+      "materials": [
+        "Cyan_Luminous_Skeletal_Material"
+      ],
+      "images": []
+    }
+  },
+  "failures": []
+}

@@ -461,3 +461,42 @@ def test_multi_morphology_export_all_creatures(tmp_path, morph_name, skel_factor
     assert f"ROOT {skel.root_name}" in content
     assert "MOTION" in content
     assert f"Frames: {T}" in content
+
+
+def test_gltf_zero_weight_joints_conform_to_khronos_spec(tmp_path, sample_human_anim):
+    """
+    Verifies GltfExporter.sanitize_skin_influences strictly follows glTF 2.0 spec:
+    - duplicate joint indices are merged before normalization
+    - active (w > 0) joint indices are distinct and weights sum to 1.0
+    - every zero-weight slot (w == 0) uses joint index 0 (0 ACCESSOR_JOINTS_USED_ZERO_WEIGHT warnings)
+    """
+    raw_j = np.array(
+        [
+            [4, 4, 7, 9],   # duplicate active joint 4 + non-zero indices on zero-weight slots
+            [3, 5, 6, 8],   # 1 active joint, 3 zero-weight slots with non-zero indices
+            [0, 1, 2, 3],   # all zero weights -> fallback 100% joint 0
+        ],
+        dtype=np.uint16,
+    )
+    raw_w = np.array(
+        [
+            [0.3, 0.35, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+    clean_j, clean_w = GltfExporter.sanitize_skin_influences(raw_j, raw_w)
+
+    np.testing.assert_allclose(clean_w.sum(axis=1), 1.0, atol=1e-6)
+    assert np.all(clean_j[clean_w <= 0.0] == 0), "Zero-weight slots must always use joint index 0"
+    assert int(clean_j[0, 0]) == 4 and float(clean_w[0, 0]) == pytest.approx(1.0)
+    assert int(clean_j[1, 0]) == 3 and float(clean_w[1, 0]) == pytest.approx(1.0)
+    assert int(clean_j[2, 0]) == 0 and float(clean_w[2, 0]) == pytest.approx(1.0)
+
+    # Full exported glTF must pass strict validator with 0 errors and 0 warnings
+    skel, anim = sample_human_anim
+    out_file = tmp_path / "khronos_clean.gltf"
+    GltfExporter().export(skel, anim, out_file)
+    res = validate_gltf_strict(out_file, check_ibms=True)
+    assert res.is_valid and len(res.errors) == 0 and len(res.warnings) == 0

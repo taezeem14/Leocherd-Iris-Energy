@@ -27,6 +27,54 @@ class GltfExporter(BaseAssetExporter):
     def __init__(self) -> None:
         super().__init__(name="GltfExporter", extension=".gltf")
 
+    @staticmethod
+    def sanitize_skin_influences(
+        j_indices: np.ndarray,
+        j_weights: np.ndarray,
+        min_weight: float = 1e-5,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Canonicalizes per-vertex skin influences to the glTF 2.0 skinning rules.
+
+        Output guarantees (validated by the Khronos glTF-Validator with zero errors/warnings):
+          * at most 4 influences, merged per joint and sorted by descending weight
+          * weights are non-negative and sum to 1.0 (within float32 precision)
+          * no joint index appears twice among non-zero weights
+          * every zero-weight slot uses joint index 0 (no ACCESSOR_JOINTS_USED_ZERO_WEIGHT)
+          * vertices with no valid influence are bound 100% to joint 0
+        """
+        ji = np.asarray(j_indices, dtype=np.int64)
+        jw = np.asarray(j_weights, dtype=np.float64)
+        V = len(jw)
+        out_j = np.zeros((V, 4), dtype=np.uint16)
+        out_w = np.zeros((V, 4), dtype=np.float32)
+        if V == 0:
+            return out_j, out_w
+
+        K = min(ji.shape[1], jw.shape[1])
+        for v_idx in range(V):
+            merged: Dict[int, float] = {}
+            for k in range(K):
+                w = float(jw[v_idx, k])
+                if w > min_weight and np.isfinite(w):
+                    j = int(ji[v_idx, k])
+                    merged[j] = merged.get(j, 0.0) + w
+            pairs = sorted(merged.items(), key=lambda p: p[1], reverse=True)[:4]
+            total = sum(w for _, w in pairs)
+            if total <= 1e-9:
+                out_w[v_idx, 0] = 1.0
+                continue
+            for k, (j, w) in enumerate(pairs):
+                out_j[v_idx, k] = j
+                out_w[v_idx, k] = w / total
+
+        # Remove float32 rounding drift: push the residual onto the dominant influence.
+        residual = 1.0 - out_w.astype(np.float64).sum(axis=1)
+        out_w[:, 0] = (out_w[:, 0].astype(np.float64) + residual).astype(np.float32)
+        out_j[out_w <= 0.0] = 0
+        out_w[out_w < 0.0] = 0.0
+        return out_j, out_w
+
     def export(
         self,
         skeleton: Skeleton,
@@ -290,53 +338,15 @@ class GltfExporter(BaseAssetExporter):
             from iris.rigging.proxy_mesh import ProxyMeshGenerator
             verts, norms, tri_indices, j_indices, j_weights = ProxyMeshGenerator.create_skinned_mannequin(skeleton)
 
-        # Sanitize weights and indices for strict glTF conformance across all mesh sources:
-        # 1. Merge duplicate joint indices per vertex
-        # 2. Sort influences strictly descending by weight
-        # 3. Normalize weights to sum exactly to 1.0 (partition of unity)
-        # 4. Ensure all 4 slots in JOINTS_0 are strictly unique per vertex to satisfy Khronos glTF-Validator
-        #    (unused slots with 0 weight are filled with distinct valid joint indices from the skeleton)
+        # Sanitize weights and indices for strict glTF 2.0 conformance (Khronos glTF-Validator clean):
+        # 1. Merge duplicate joint indices per vertex (sum their weights).
+        # 2. Sort influences strictly descending by weight, keep the top 4.
+        # 3. Normalize weights to sum to 1.0 (partition of unity).
+        # 4. Every zero-weight slot gets joint index 0. Per spec, joints with zero weight carry no influence,
+        #    and the validator flags non-zero indices on zero weights (ACCESSOR_JOINTS_USED_ZERO_WEIGHT).
+        #    Repeating index 0 on zero-weight slots is allowed: duplicates are only an error for non-zero weights.
         if len(j_weights) > 0:
-            V = len(j_weights)
-            num_joints = max(len(skeleton.joints), 4)
-            clean_joint_indices = np.zeros((V, 4), dtype=np.uint16)
-            clean_joint_weights = np.zeros((V, 4), dtype=np.float32)
-
-            for v_idx in range(V):
-                joint_map: Dict[int, float] = {}
-                for k in range(min(4, j_weights.shape[1])):
-                    w = float(j_weights[v_idx, k])
-                    j = int(j_indices[v_idx, k])
-                    if w > 1e-5:
-                        joint_map[j] = joint_map.get(j, 0.0) + w
-
-                sorted_pairs = sorted(joint_map.items(), key=lambda p: p[1], reverse=True)[:4]
-                total_w = sum(p[1] for p in sorted_pairs)
-
-                used_joints = set()
-                if total_w < 1e-6:
-                    clean_joint_weights[v_idx, 0] = 1.0
-                    clean_joint_indices[v_idx, 0] = 0
-                    used_joints.add(0)
-                else:
-                    for k, (j, w) in enumerate(sorted_pairs):
-                        clean_joint_weights[v_idx, k] = float(w / total_w)
-                        clean_joint_indices[v_idx, k] = int(j)
-                        used_joints.add(int(j))
-
-                # Fill remaining unused slots with distinct valid joint indices (with 0.0 weight)
-                # to satisfy Khronos ACCESSOR_JOINTS_INDEX_DUPLICATE check
-                candidate = 0
-                for k in range(len(sorted_pairs) if total_w >= 1e-6 else 1, 4):
-                    while candidate in used_joints and candidate < num_joints:
-                        candidate += 1
-                    clean_joint_indices[v_idx, k] = int(candidate % num_joints)
-                    clean_joint_weights[v_idx, k] = 0.0
-                    used_joints.add(int(candidate % num_joints))
-                    candidate += 1
-
-            j_indices = clean_joint_indices
-            j_weights = clean_joint_weights
+            j_indices, j_weights = self.sanitize_skin_influences(j_indices, j_weights)
 
         # Eliminate any zero-area or degenerate faces (area < 1e-7)
         if len(tri_indices) > 0 and len(verts) > 0:

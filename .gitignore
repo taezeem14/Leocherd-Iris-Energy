@@ -34,6 +34,11 @@ data/samples/online_walking_sample.mp4
 .DS_Store
 Thumbs.db
 
-# Temp logs
+# Temp logs & Blender auto-backups
 *.log
+*.blend1
 .pytest_temp/
+
+# Node dependencies (Khronos glTF-Validator CLI runner)
+node_modules/
+tools/gltf-validator/node_modules/

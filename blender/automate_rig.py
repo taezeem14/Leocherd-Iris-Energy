@@ -16,7 +16,9 @@ Usage:
 import argparse
 import json
 from pathlib import Path
+import struct
 import sys
+import traceback
 
 try:
     import bpy
@@ -283,6 +285,124 @@ def apply_animation(armature_obj, anim_data):
     print(f"[OK] Animation keyframes successfully baked across {total_baked} frames.")
 
 
+def retime_action_to_frame_range(action, target_start: float, target_end: float):
+    """
+    Linearly retimes all F-curve keyframes (and bezier handles) in `action`
+    so the animation curves span exactly [target_start, target_end].
+    """
+    if not action or not action.fcurves:
+        return
+    src_start, src_end = float(action.frame_range[0]), float(action.frame_range[1])
+    src_span = src_end - src_start
+    dst_span = float(target_end) - float(target_start)
+    if src_span <= 1e-6 or dst_span <= 1e-6:
+        return
+
+    scale = dst_span / src_span
+    for fc in action.fcurves:
+        for kp in fc.keyframe_points:
+            kp.co.x = target_start + (kp.co.x - src_start) * scale
+            kp.handle_left.x = target_start + (kp.handle_left.x - src_start) * scale
+            kp.handle_right.x = target_start + (kp.handle_right.x - src_start) * scale
+        fc.update()
+
+    new_start, new_end = float(action.frame_range[0]), float(action.frame_range[1])
+    print(
+        f"[OK] Retimed Action '{action.name}' F-curves: "
+        f"[{src_start:.2f}, {src_end:.2f}] -> [{new_start:.2f}, {new_end:.2f}]"
+    )
+
+
+def ensure_packed_material_texture(mesh_obj, tex_file: Path):
+    """
+    Ensures `mesh_obj` has a Principled BSDF material whose Base Color image texture node
+    references `tex_file` AND that the image is packed directly inside the .blend file.
+    Preserves glTF-imported shader properties (such as cyan emissive tint) when present.
+    """
+    if not mesh_obj or not tex_file or not tex_file.exists():
+        return
+
+    resolved = tex_file.resolve()
+    target_mat = mesh_obj.data.materials[0] if len(mesh_obj.data.materials) > 0 else None
+
+    if target_mat is None:
+        target_mat = bpy.data.materials.new(name="CreatureMaterial")
+        target_mat.use_nodes = True
+        mesh_obj.data.materials.append(target_mat)
+    else:
+        target_mat.use_nodes = True
+
+    nodes = target_mat.node_tree.nodes
+    links = target_mat.node_tree.links
+    bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None:
+        bsdf = nodes.new("ShaderNodeBsdfPrincipled")
+
+    tex_nodes = [n for n in nodes if n.type == "TEX_IMAGE"]
+    if tex_nodes:
+        tex_node = tex_nodes[0]
+        if tex_node.image is None:
+            tex_node.image = bpy.data.images.load(str(resolved), check_existing=True)
+        else:
+            # Ensure the image has its file bytes loaded and packed
+            tex_node.image.filepath = str(resolved)
+            try:
+                tex_node.image.reload()
+            except Exception:
+                pass
+    else:
+        tex_node = nodes.new("ShaderNodeTexImage")
+        tex_node.image = bpy.data.images.load(str(resolved), check_existing=True)
+        links.new(bsdf.inputs["Base Color"], tex_node.outputs["Color"])
+
+    # Normalize image name (avoid .001 suffixes) and pack directly into the .blend file
+    img = tex_node.image
+    if img is not None:
+        img.name = resolved.name
+        if img.packed_file is None:
+            img.pack()
+        # Purge any duplicate unused images referencing the same filename
+        for other in list(bpy.data.images):
+            if other != img and other.users == 0:
+                bpy.data.images.remove(other)
+
+    # Pack all remaining external data so the .blend is 100% self-contained
+    try:
+        bpy.ops.file.pack_all()
+    except Exception:
+        pass
+
+    packed_size = len(img.packed_file.data) if (img and img.packed_file) else 0
+    print(
+        f"[OK] Material '{target_mat.name}' bound to packed image '{img.name if img else 'None'}' "
+        f"({packed_size:,} bytes packed inside .blend)."
+    )
+
+
+def patch_fbx_global_timespan(fbx_path: Path, frame_start: int, frame_end: int, fps: float):
+    """
+    Blender's FBX exporter hardcodes GlobalSettings.TimeSpanStop = 1.0s (FBX_KTIME) even when
+    AnimationStack/Takes span the full animation. This performs a fixed-width in-place int64
+    update of TimeSpanStart and TimeSpanStop so GlobalSettings matches AnimationStack & Takes.
+    """
+    FBX_KTIME = 46186158000  # FBX ticks per second
+    start_ktime = int(round((float(frame_start) / float(fps)) * FBX_KTIME))
+    stop_ktime = int(round((float(frame_end) / float(fps)) * FBX_KTIME))
+
+    data = bytearray(fbx_path.read_bytes())
+    patched = []
+    for prop_name, val in [(b"TimeSpanStart", start_ktime), (b"TimeSpanStop", stop_ktime)]:
+        sig = prop_name + b"S\x05\x00\x00\x00KTimeS\x04\x00\x00\x00TimeS\x00\x00\x00\x00L"
+        idx = data.find(sig)
+        if idx >= 0:
+            val_off = idx + len(sig)
+            data[val_off : val_off + 8] = struct.pack("<q", val)
+            patched.append(f"{prop_name.decode()}={val / FBX_KTIME:.3f}s")
+    if patched:
+        fbx_path.write_bytes(data)
+        print(f"[OK] Synchronized FBX GlobalSettings time span: {', '.join(patched)}")
+
+
 def main():
     args = parse_args()
     print("=" * 65)
@@ -291,6 +411,22 @@ def main():
 
     clear_scene()
 
+    # 0. Pre-read animation FPS & frame count BEFORE importing glTF so Blender's glTF importer
+    #    samples timestamps at the true target FPS (30 FPS) instead of Blender's default 24 FPS!
+    target_fps = 30.0
+    target_frame_count = 0
+    anim_data_cache = None
+    if args.anim and Path(args.anim).exists():
+        with open(args.anim, "r", encoding="utf-8") as f_a:
+            anim_data_cache = json.load(f_a)
+        target_fps = float(anim_data_cache.get("fps", 30.0))
+        target_frame_count = len(anim_data_cache.get("timestamps", anim_data_cache.get("frames", [])))
+
+    scene_fps = int(round(target_fps))
+    bpy.context.scene.render.fps = scene_fps
+    bpy.context.scene.render.fps_base = 1.0
+    print(f"[OK] Pre-configured scene FPS: {scene_fps} FPS (source: {target_fps:.3f} FPS, {target_frame_count} keys)")
+
     # 1. Import 3D Mesh
     mesh_obj = None
     imported_armature = None
@@ -298,10 +434,10 @@ def main():
         mesh_obj = import_3d_mesh(args.mesh)
         # Purge any stray helper meshes created by importers (e.g. glTF helper Icospheres)
         for obj in list(bpy.data.objects):
-            if "icosphere" in obj.name.lower():
+            if "icosphere" in obj.name.lower() or obj.name.lower().startswith("cube"):
                 bpy.data.objects.remove(obj, do_unlink=True)
         for block in list(bpy.data.meshes):
-            if "icosphere" in block.name.lower():
+            if "icosphere" in block.name.lower() or block.name.lower().startswith("cube"):
                 bpy.data.meshes.remove(block)
 
         # Check if mesh import already brought an articulated armature (e.g. from glTF)
@@ -327,96 +463,76 @@ def main():
             if mod.type == "ARMATURE":
                 mod.use_deform_preserve_volume = True
 
-    # 3b. Bind Creature Diffuse Texture if present
+    # 3b. Ensure Creature Diffuse Texture is connected AND packed inside .blend
     tex_file = None
     if args.mesh:
         candidate_tex = Path(args.mesh).resolve().parent / "creature_diffuse.png"
         if candidate_tex.exists():
             tex_file = candidate_tex
-
     if tex_file and mesh_obj:
-        print(f"[*] Binding texture '{tex_file.name}' to material in Blender scene...")
-        try:
-            mat = bpy.data.materials.new(name="CreatureMaterial")
-            mat.use_nodes = True
-            nodes = mat.node_tree.nodes
-            links = mat.node_tree.links
-            bsdf = nodes.get("Principled BSDF")
+        ensure_packed_material_texture(mesh_obj, tex_file)
 
-            tex_node = nodes.new("ShaderNodeTexImage")
-            tex_node.image = bpy.data.images.load(str(tex_file.resolve()))
-            if bsdf:
-                links.new(bsdf.inputs["Base Color"], tex_node.outputs["Color"])
-
-            mesh_obj.data.materials.clear()
-            mesh_obj.data.materials.append(mat)
-            print(f"[OK] Bound diffuse texture '{tex_file.name}' to Character_Mesh.")
-        except Exception as e:
-            print(f"[WARN] Failed to bind diffuse texture: {e}")
-
-    # 4. Apply Animation (only if the armature does not already carry an action imported from glTF)
+    # 4. Apply Animation (or retime glTF-imported Action to exact 1..N frame range at target FPS)
     has_action = (
         armature_obj is not None
         and armature_obj.animation_data is not None
         and armature_obj.animation_data.action is not None
     )
-    if not has_action and args.anim and Path(args.anim).exists():
-        with open(args.anim, "r", encoding="utf-8") as f:
-            anim_data = json.load(f)
-        apply_animation(armature_obj, anim_data)
+    if not has_action and anim_data_cache is not None:
+        apply_animation(armature_obj, anim_data_cache)
     elif has_action:
-        print(f"[OK] Preserving mathematically accurate animation action '{armature_obj.animation_data.action.name}' from glTF import.")
+        act = armature_obj.animation_data.action
+        print(f"[OK] Preserving mathematically accurate animation action '{act.name}' from glTF import.")
+        target_end = float(max(target_frame_count, int(round(act.frame_range[1])) + 1))
+        retime_action_to_frame_range(act, 1.0, target_end)
 
-    # 4b. Configure Scene Playback Range and Frame Rate
-    target_frame_end = 412
-    fps = 30.0
-    if args.anim and Path(args.anim).exists():
-        try:
-            with open(args.anim, "r", encoding="utf-8") as f_a:
-                a_data = json.load(f_a)
-                num_k = len(a_data.get("timestamps", a_data.get("frames", [])))
-                if num_k > 0:
-                    target_frame_end = max(target_frame_end, num_k)
-                if "fps" in a_data:
-                    fps = float(a_data["fps"])
-        except Exception:
-            pass
-
+    # 4b. Lock Scene Playback Range to match exact Action range
+    target_frame_end = max(1, target_frame_count)
     if armature_obj and armature_obj.animation_data and armature_obj.animation_data.action:
         act = armature_obj.animation_data.action
-        act_end = int(round(act.frame_range[1]))
-        target_frame_end = max(target_frame_end, act_end)
+        target_frame_end = max(target_frame_end, int(round(act.frame_range[1])))
 
-    bpy.context.scene.render.fps = int(round(fps))
+    bpy.context.scene.render.fps = scene_fps
+    bpy.context.scene.render.fps_base = 1.0
     bpy.context.scene.frame_start = 1
     bpy.context.scene.frame_end = target_frame_end
-    print(f"[OK] Scene playback range set to: {bpy.context.scene.frame_start}..{bpy.context.scene.frame_end} ({target_frame_end / fps:.2f}s @ {bpy.context.scene.render.fps} FPS)")
+    bpy.context.scene.frame_set(1)
+    duration_sec = (target_frame_end - 1) / float(scene_fps) if target_frame_end > 1 else 0.0
+    print(
+        f"[OK] Scene playback range locked: 1..{target_frame_end} "
+        f"({duration_sec:.2f}s @ {scene_fps} FPS)"
+    )
 
-    # 5. Clean scene of ANY stray objects (Cube, Camera, Light, Icosphere)
+    # 5. Exhaustive scene & orphan purge: keep ONLY Character_Mesh and Armature
     for obj in list(bpy.data.objects):
-        if obj.name.lower().startswith("cube") or "icosphere" in obj.name.lower():
-            bpy.data.objects.remove(obj, do_unlink=True)
-        elif obj != mesh_obj and obj != armature_obj:
+        if obj != mesh_obj and obj != armature_obj:
             bpy.data.objects.remove(obj, do_unlink=True)
 
     for block in list(bpy.data.meshes):
-        if block.name.lower().startswith("cube") or "icosphere" in block.name.lower():
-            bpy.data.meshes.remove(block)
-        elif mesh_obj and block != mesh_obj.data:
+        if not mesh_obj or block != mesh_obj.data:
             bpy.data.meshes.remove(block)
 
-    # 6. Save Output .blend
+    for block in list(bpy.data.armatures):
+        if not armature_obj or block != armature_obj.data:
+            bpy.data.armatures.remove(block)
+
+    try:
+        bpy.data.orphans_purge(do_recursive=True)
+    except Exception:
+        pass
+
+    # 6. Save Output .blend (with packed texture, no .blend1 backup clutter)
     out_blend = Path(args.output).resolve()
     out_blend.parent.mkdir(parents=True, exist_ok=True)
+    bpy.context.preferences.filepaths.save_version = 0
     bpy.ops.wm.save_as_mainfile(filepath=str(out_blend))
     print(f"[SUCCESS] Saved rigged Blender production scene to: {out_blend}")
 
-    # 7. Clean FBX Export (Mesh and Armature only with full animation baked)
+    # 7. Clean FBX Export (Mesh and Armature only with full 1..N animation baked)
     if args.export_fbx:
         out_fbx = Path(args.export_fbx).resolve()
         out_fbx.parent.mkdir(parents=True, exist_ok=True)
 
-        # Select only active character mesh and armature
         bpy.ops.object.select_all(action="DESELECT")
         if mesh_obj:
             mesh_obj.select_set(True)
@@ -437,10 +553,15 @@ def main():
             embed_textures=True,
             object_types={"ARMATURE", "MESH"},
         )
+        patch_fbx_global_timespan(out_fbx, 1, target_frame_end, float(scene_fps))
         print(f"[SUCCESS] Exported production FBX to: {out_fbx}")
 
     print("=" * 65)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        traceback.print_exc()
+        sys.exit(1)

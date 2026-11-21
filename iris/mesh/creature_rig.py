@@ -334,21 +334,13 @@ class CreatureSkeletalFigureGenerator:
         v5 = p_end
         verts = np.array([v0, v1, v2, v3, v4, v5], dtype=np.float32)
 
-        # Helper to get 4 distinct joint indices
+        # glTF skinning convention: active influences first, zero-weight slots use joint index 0
         def get_distinct_indices(primary: int, secondary: Optional[int] = None) -> List[int]:
-            used = {primary}
-            if secondary is not None:
-                used.add(secondary)
             res = [primary]
             if secondary is not None:
                 res.append(secondary)
-            cand = 0
             while len(res) < 4:
-                cand_idx = cand % num_joints
-                if cand_idx not in used:
-                    res.append(cand_idx)
-                    used.add(cand_idx)
-                cand += 1
+                res.append(0)
             return res
 
         if j_parent == j_child:
@@ -470,16 +462,9 @@ class CreatureSkeletalFigureGenerator:
             faces.append([b_last + j, b_last + next_j, north_idx])
 
         V = len(verts)
-        # Select 4 distinct joint indices to satisfy glTF-Validator
-        distinct_joints = [j_idx]
-        cand = 0
-        while len(distinct_joints) < 4:
-            cand_idx = cand % num_joints
-            if cand_idx not in distinct_joints:
-                distinct_joints.append(cand_idx)
-            cand += 1
-
-        ji = np.tile(np.array(distinct_joints, dtype=np.uint16), (V, 1))
+        # glTF skinning convention: single rigid influence, zero-weight slots use joint index 0
+        ji = np.zeros((V, 4), dtype=np.uint16)
+        ji[:, 0] = j_idx
         jw = np.zeros((V, 4), dtype=np.float32)
         jw[:, 0] = 1.0
         return (
@@ -651,14 +636,17 @@ class CreatureReconstructionPipeline:
         # 1. Analyze 2D Creature Image
         profile, texture_crop = CreatureImageAnalyzer.analyze_image(img_path)
 
-        # Save extracted diffuse texture
+        # Save extracted diffuse texture resized to power-of-two (512x512) for optimal GPU mipmapping
+        # and zero IMAGE_NPOT_DIMENSIONS notices in Khronos glTF-Validator
         tex_path = out_dir / "creature_diffuse.png"
+        pot_size = (512, 512)
         if cv2 is not None:
-            cv2.imwrite(str(tex_path), texture_crop)
+            tex_pot = cv2.resize(texture_crop, pot_size, interpolation=cv2.INTER_AREA if texture_crop.shape[0] > 512 else cv2.INTER_CUBIC)
+            cv2.imwrite(str(tex_path), tex_pot)
         else:
             crop_rgb = texture_crop[:, :, ::-1] if len(texture_crop.shape) == 3 else texture_crop
-            Image.fromarray(crop_rgb).save(str(tex_path))
-        logger.info(f"Saved creature diffuse texture to: {tex_path}")
+            Image.fromarray(crop_rgb).resize(pot_size, Image.Resampling.LANCZOS).save(str(tex_path))
+        logger.info(f"Saved power-of-two (512x512) creature diffuse texture to: {tex_path}")
 
         # 2. Build Creature Skeleton
         skeleton = CreatureRigBuilder.build_skeleton(profile)
@@ -862,11 +850,16 @@ class CreatureReconstructionPipeline:
                 str(fbx_path),
             ]
             try:
-                subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                exported_files["blend"] = str(blend_path)
-                exported_files["fbx"] = str(fbx_path)
-                logger.info(f"Successfully compiled Blender (.blend): {blend_path}")
-                logger.info(f"Successfully compiled Unreal Engine (.fbx): {fbx_path}")
+                proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                if proc.returncode != 0 or "Traceback" in proc.stderr or "Traceback" in proc.stdout:
+                    err_tail = (proc.stderr or proc.stdout or "").strip()[-800:]
+                    raise RuntimeError(f"Blender exited with code {proc.returncode}: {err_tail}")
+                if blend_path.exists():
+                    exported_files["blend"] = str(blend_path)
+                    logger.info(f"Successfully compiled Blender (.blend): {blend_path}")
+                if fbx_path.exists():
+                    exported_files["fbx"] = str(fbx_path)
+                    logger.info(f"Successfully compiled Unreal Engine (.fbx): {fbx_path}")
             except Exception as e:
                 logger.warning(f"Headless Blender compilation failed: {e}")
 

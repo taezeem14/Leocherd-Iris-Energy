@@ -38,10 +38,23 @@ def main():
             export_def_bones=True,
         )
     elif out_path.lower().endswith(".fbx"):
+        for obj in list(bpy.data.objects):
+            if obj.type not in {"ARMATURE", "MESH"} or obj.name.lower().startswith("cube") or "icosphere" in obj.name.lower():
+                bpy.data.objects.remove(obj, do_unlink=True)
+        bpy.ops.object.select_all(action="DESELECT")
+        for obj in bpy.context.scene.objects:
+            if obj.type in {"ARMATURE", "MESH"}:
+                obj.select_set(True)
         bpy.ops.export_scene.fbx(
             filepath=out_path,
+            use_selection=True,
             bake_anim=True,
+            bake_anim_use_all_actions=False,
+            bake_anim_use_nla_strips=False,
             add_leaf_bones=False,
+            path_mode="COPY",
+            embed_textures=True,
+            object_types={"ARMATURE", "MESH"},
         )
     else:
         print(f"[!] Unsupported format extension: {out_path}")

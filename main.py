@@ -274,6 +274,39 @@ def cmd_diagnostics(args: argparse.Namespace) -> None:
     print_report(profile)
 
 
+def cmd_verify_exports(args: argparse.Namespace) -> None:
+    """Runs the full automated QA suite across exported glTF, .blend, .fbx, OBJ/MTL, and BVH assets."""
+    from scripts.verify_production_bundle import verify_bundle
+
+    report = verify_bundle(Path(args.directory))
+    print("=" * 70)
+    print(f" LEOCHERD IRIS ENERGY - PRODUCTION EXPORT VERIFICATION: {report['status']}")
+    print("=" * 70)
+    k = report["checks"].get("khronos_gltf_validator", {})
+    if k:
+        print(
+            f" Khronos glTF-Validator ({k.get('validator_version')}): "
+            f"{k.get('errors')} errors, {k.get('warnings')} warnings, {k.get('infos')} infos, {k.get('hints')} hints"
+        )
+    bl = report["checks"].get("blender_blend", {})
+    if bl:
+        print(
+            f" Blender .blend : frames {bl['frame_start']}..{bl['frame_end']} @ {bl['fps']} FPS | "
+            f"action {bl['action_frame_range']} | bones={bl['bone_count']} | cubes={bl['cube_count']}"
+        )
+    fbx = report["checks"].get("blender_fbx", {})
+    if fbx:
+        print(
+            f" Unreal/Unity .fbx: raw_meshes={len(fbx['raw_mesh_models'])} | raw_cubes={fbx['raw_cube_count']} | "
+            f"clean_import_cubes={fbx['clean_import_cube_count']} | bones={fbx['bone_count']}"
+        )
+    if report["failures"]:
+        for f in report["failures"]:
+            print(f" [FAIL] {f}")
+        sys.exit(1)
+    print("=" * 70)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="iris",
@@ -363,6 +396,14 @@ def build_parser() -> argparse.ArgumentParser:
     # diagnostics
     p_diag = subparsers.add_parser("diagnostics", help="Run system hardware and environment diagnostics")
     p_diag.set_defaults(func=cmd_diagnostics)
+
+    # verify-exports
+    p_verify = subparsers.add_parser(
+        "verify-exports",
+        help="Run automated QA verification (Khronos glTF-Validator, Blender .blend, FBX, OBJ/MTL, BVH)",
+    )
+    p_verify.add_argument("directory", nargs="?", default="outputs/creature_dwarf", help="Export directory to audit")
+    p_verify.set_defaults(func=cmd_verify_exports)
 
     return parser
 

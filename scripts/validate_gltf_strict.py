@@ -451,16 +451,29 @@ class GltfStrictValidator:
                                     f"Mesh {m_idx} Prim {p_idx}: joint index exceeds skin joints count ({skin_joint_count})"
                                 )
 
-                        # 5. Strict Duplicate Joint Indices Check (Khronos ACCESSOR_JOINTS_INDEX_DUPLICATE)
-                        # In glTF 2.0, all 4 joint indices for a given vertex in JOINTS_0 must be unique.
+                        # 5. Active Duplicate Joint Indices Check (Khronos ACCESSOR_JOINTS_INDEX_DUPLICATE)
+                        # Per glTF 2.0 spec, duplicate joint indices are invalid only among non-zero weights.
                         for v_i in range(len(j_arr)):
-                            all_v_joints = list(j_arr[v_i])
-                            if len(all_v_joints) != len(set(all_v_joints)):
+                            active_joints = [
+                                int(j_arr[v_i, k]) for k in range(4) if float(w_arr[v_i, k]) > 0.0
+                            ]
+                            if len(active_joints) != len(set(active_joints)):
                                 errors.append(
-                                    f"Mesh {m_idx} Prim {p_idx} Vertex {v_i}: duplicate joint index detected in JOINTS_0 "
-                                    f"(ACCESSOR_JOINTS_INDEX_DUPLICATE: {all_v_joints})"
+                                    f"Mesh {m_idx} Prim {p_idx} Vertex {v_i}: duplicate active joint index in JOINTS_0 "
+                                    f"(ACCESSOR_JOINTS_INDEX_DUPLICATE: {active_joints})"
                                 )
                                 break
+
+                        # 6. Zero-Weight Joint Index Check (Khronos ACCESSOR_JOINTS_USED_ZERO_WEIGHT)
+                        # Per glTF 2.0 spec, any slot with zero weight MUST have joint index 0.
+                        zero_weight_mask = w_arr <= 0.0
+                        nonzero_joint_on_zero_w = zero_weight_mask & (j_arr != 0)
+                        bad_count = int(np.sum(nonzero_joint_on_zero_w))
+                        if bad_count > 0:
+                            warnings.append(
+                                f"Mesh {m_idx} Prim {p_idx}: {bad_count} non-zero joint indices paired with zero weight "
+                                f"(ACCESSOR_JOINTS_USED_ZERO_WEIGHT)"
+                            )
 
         stats["total_vertices"] = total_verts
         stats["total_faces"] = total_faces

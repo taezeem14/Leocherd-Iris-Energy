@@ -1,0 +1,13 @@
+{
+  "name": "leocherd-gltf-validator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Runs the official Khronos glTF-Validator against Leocherd Iris Energy exports and writes a JSON report.",
+  "type": "module",
+  "scripts": {
+    "validate": "node validate.mjs"
+  },
+  "dependencies": {
+    "gltf-validator": "^2.0.0-dev.3.10"
+  }
+}
